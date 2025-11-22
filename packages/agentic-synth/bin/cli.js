@@ -51,7 +51,22 @@ function loadSchema(schemaPath) {
 program
   .name('agentic-synth')
   .description('AI-powered synthetic data generation for agentic systems')
-  .version('0.1.0');
+  .version('0.1.0')
+  .addHelpText('after', `
+Examples:
+  $ agentic-synth generate --count 100 --schema schema.json
+  $ agentic-synth init --provider gemini
+  $ agentic-synth doctor --verbose
+
+Advanced Examples (via @ruvector/agentic-synth-examples):
+  $ npx @ruvector/agentic-synth-examples dspy train --models gemini,claude
+  $ npx @ruvector/agentic-synth-examples self-learn --task code-generation
+  $ npx @ruvector/agentic-synth-examples list
+
+Learn more:
+  https://www.npmjs.com/package/@ruvector/agentic-synth-examples
+  https://github.com/ruvnet/ruvector/tree/main/packages/agentic-synth
+`);
 
 program
   .command('generate')

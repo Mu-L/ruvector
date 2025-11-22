@@ -139,6 +139,27 @@ EOF
 
 ---
 
+---
+
+> **🎓 NEW: Production Examples Package!**
+>
+> **[@ruvector/agentic-synth-examples](https://www.npmjs.com/package/@ruvector/agentic-synth-examples)** includes **50+ production-ready examples** including:
+> - 🧠 **DSPy Multi-Model Training** - Train Claude, GPT-4, Gemini, and Llama simultaneously
+> - 🔄 **Self-Learning Systems** - Quality improves automatically over time
+> - 📈 **Stock Market Simulation** - Realistic financial data generation
+> - 🔒 **Security Testing** - Penetration test scenarios
+> - 🤖 **Swarm Coordination** - Multi-agent orchestration patterns
+>
+> ```bash
+> # Try now!
+> npx @ruvector/agentic-synth-examples dspy train --models gemini,claude
+> npx @ruvector/agentic-synth-examples list
+> ```
+>
+> **[📦 View Full Examples Package →](https://www.npmjs.com/package/@ruvector/agentic-synth-examples)**
+
+---
+
 ## 🏃 **Quick Start (< 5 minutes)**
 
 ### 1️⃣ **Basic SDK Usage**
