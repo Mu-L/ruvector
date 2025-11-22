@@ -8,7 +8,7 @@
     "allowJs": true,
     "checkJs": false,
     "outDir": "./dist",
-    "declaration": false,
+    "declaration": true,
     "sourceMap": false,
     "strict": true,
     "noUncheckedIndexedAccess": true,

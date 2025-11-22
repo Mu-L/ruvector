@@ -373,9 +373,9 @@ export class ClaudeSonnetAgent extends ModelTrainingAgent {
       const endTime = performance.now();
 
       const quality = await this.calculateQuality(output, signature);
-      const performance = this.calculatePerformance(startTime, endTime, tokensUsed);
+      const performanceMetrics = this.calculatePerformance(startTime, endTime, tokensUsed);
 
-      this.totalCost += performance.cost;
+      this.totalCost += performanceMetrics.cost;
       this.currentIteration++;
 
       const result: IterationResult = {
@@ -383,7 +383,7 @@ export class ClaudeSonnetAgent extends ModelTrainingAgent {
         phase: TrainingPhase.BASELINE,
         modelProvider: ModelProvider.CLAUDE,
         quality,
-        performance,
+        performance: performanceMetrics,
         timestamp: new Date(),
         prompt,
         output,
@@ -431,9 +431,9 @@ export class GPT4Agent extends ModelTrainingAgent {
       const endTime = performance.now();
 
       const quality = await this.calculateQuality(output, signature);
-      const performance = this.calculatePerformance(startTime, endTime, tokensUsed);
+      const performanceMetrics = this.calculatePerformance(startTime, endTime, tokensUsed);
 
-      this.totalCost += performance.cost;
+      this.totalCost += performanceMetrics.cost;
       this.currentIteration++;
 
       const result: IterationResult = {
@@ -441,7 +441,7 @@ export class GPT4Agent extends ModelTrainingAgent {
         phase: TrainingPhase.BASELINE,
         modelProvider: ModelProvider.GPT4,
         quality,
-        performance,
+        performance: performanceMetrics,
         timestamp: new Date(),
         prompt,
         output,
@@ -488,9 +488,9 @@ export class LlamaAgent extends ModelTrainingAgent {
       const endTime = performance.now();
 
       const quality = await this.calculateQuality(output, signature);
-      const performance = this.calculatePerformance(startTime, endTime, tokensUsed);
+      const performanceMetrics = this.calculatePerformance(startTime, endTime, tokensUsed);
 
-      this.totalCost += performance.cost;
+      this.totalCost += performanceMetrics.cost;
       this.currentIteration++;
 
       const result: IterationResult = {
@@ -498,7 +498,7 @@ export class LlamaAgent extends ModelTrainingAgent {
         phase: TrainingPhase.BASELINE,
         modelProvider: ModelProvider.LLAMA,
         quality,
-        performance,
+        performance: performanceMetrics,
         timestamp: new Date(),
         prompt,
         output,
@@ -545,9 +545,9 @@ export class GeminiAgent extends ModelTrainingAgent {
       const endTime = performance.now();
 
       const quality = await this.calculateQuality(output, signature);
-      const performance = this.calculatePerformance(startTime, endTime, tokensUsed);
+      const performanceMetrics = this.calculatePerformance(startTime, endTime, tokensUsed);
 
-      this.totalCost += performance.cost;
+      this.totalCost += performanceMetrics.cost;
       this.currentIteration++;
 
       const result: IterationResult = {
@@ -555,7 +555,7 @@ export class GeminiAgent extends ModelTrainingAgent {
         phase: TrainingPhase.BASELINE,
         modelProvider: ModelProvider.GEMINI,
         quality,
-        performance,
+        performance: performanceMetrics,
         timestamp: new Date(),
         prompt,
         output,

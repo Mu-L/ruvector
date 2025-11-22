@@ -11,32 +11,36 @@
   },
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.cjs"
     },
     "./generators": {
+      "types": "./dist/generators/index.d.ts",
       "import": "./dist/generators/index.js",
-      "require": "./dist/generators/index.cjs",
-      "types": "./dist/generators/index.d.ts"
+      "require": "./dist/generators/index.cjs"
     },
     "./cache": {
+      "types": "./dist/cache/index.d.ts",
       "import": "./dist/cache/index.js",
-      "require": "./dist/cache/index.cjs",
-      "types": "./dist/cache/index.d.ts"
+      "require": "./dist/cache/index.cjs"
     }
   },
   "files": [
-    "dist",
+    "dist/**/*.js",
+    "dist/**/*.cjs",
+    "dist/**/*.d.ts",
+    "dist/**/*.map",
     "bin",
     "config",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --clean && chmod +x bin/cli.js",
-    "build:generators": "tsup src/generators/index.ts --format esm,cjs --out-dir dist/generators",
-    "build:cache": "tsup src/cache/index.ts --format esm,cjs --out-dir dist/cache",
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean && chmod +x bin/cli.js",
+    "build:generators": "tsup src/generators/index.ts --format esm,cjs --dts --out-dir dist/generators",
+    "build:cache": "tsup src/cache/index.ts --format esm,cjs --dts --out-dir dist/cache",
     "build:all": "npm run build && npm run build:generators && npm run build:cache",
     "dev": "tsup src/index.ts --format esm --watch",
     "test": "vitest run",
