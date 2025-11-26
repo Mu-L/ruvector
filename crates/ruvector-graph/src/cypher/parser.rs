@@ -1165,4 +1165,107 @@ mod tests {
         let result = parse_cypher(query);
         assert!(result.is_ok());
     }
+
+    // ============== Edge Case Tests for New Functionality ==============
+
+    #[test]
+    fn test_empty_query_rejected() {
+        // Empty string should fail
+        let result = parse_cypher("");
+        assert!(result.is_err());
+        match result {
+            Err(ParseError::InvalidSyntax(msg)) => {
+                assert!(msg.contains("Empty query"));
+            }
+            _ => panic!("Expected InvalidSyntax error for empty query"),
+        }
+    }
+
+    #[test]
+    fn test_whitespace_only_query_rejected() {
+        // Whitespace-only should fail
+        let result = parse_cypher("   \n\t  ");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_map_literal_in_return() {
+        // Map literals in RETURN clause
+        let query = "MATCH (n) RETURN {name: n.name, age: n.age}";
+        let result = parse_cypher(query);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_empty_map_literal() {
+        // Empty map literal
+        let query = "MATCH (n) RETURN {}";
+        let result = parse_cypher(query);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    #[ignore = "Nested map literals require recursive Expression parsing - future enhancement"]
+    fn test_nested_map_literal() {
+        // Nested map literals - currently not supported (needs recursive expression parsing)
+        let query = "MATCH (n) RETURN {info: {name: n.name, details: {age: n.age}}}";
+        let result = parse_cypher(query);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_chained_relationship_outgoing() {
+        // Chained outgoing relationships: (a)-[r]->(b)-[s]->(c)
+        let query = "MATCH (a)-[r:KNOWS]->(b)-[s:WORKS_AT]->(c) RETURN a, b, c";
+        let result = parse_cypher(query);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_chained_relationship_mixed() {
+        // Mixed direction chained relationships: (a)-[r]->(b)<-[s]-(c)
+        let query = "MATCH (a:Person)-[r:KNOWS]->(b:Person)<-[s:MANAGES]-(c:Manager) RETURN a, b, c";
+        let result = parse_cypher(query);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_undirected_relationship() {
+        // Undirected relationship: (a)-[r]-(b)
+        let query = "MATCH (a:Person)-[r:FRIEND]-(b:Person) RETURN a, b";
+        let result = parse_cypher(query);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_remove_property() {
+        // REMOVE statement for property
+        let query = "MATCH (n:Person) REMOVE n.age RETURN n";
+        let result = parse_cypher(query);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_remove_label() {
+        // REMOVE statement for label
+        let query = "MATCH (n:Person:Employee) REMOVE n:Employee RETURN n";
+        let result = parse_cypher(query);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_map_with_string_keys() {
+        // Map with string keys (quoted)
+        let query = "MATCH (n) RETURN {'first-name': n.firstName}";
+        let result = parse_cypher(query);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_triple_chained_relationship() {
+        // Triple chained relationship: (a)-[r]->(b)-[s]->(c)-[t]->(d)
+        let query = "MATCH (a)-[r]->(b)-[s]->(c)-[t]->(d) RETURN a, d";
+        let result = parse_cypher(query);
+        assert!(result.is_ok());
+    }
 }

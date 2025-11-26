@@ -241,4 +241,71 @@ mod tests {
         assert_eq!(clusters.len(), 1);
         Ok(())
     }
+
+    #[test]
+    fn test_similarity_score_range() -> Result<()> {
+        // Verify similarity scores are in [0, 1] range after conversion
+        let config = EmbeddingConfig {
+            dimensions: 4,
+            ..Default::default()
+        };
+        let index = HybridIndex::new(config)?;
+        index.initialize_index(VectorIndexType::Node)?;
+
+        // Add embeddings with varying similarity
+        index.add_node_embedding("identical".to_string(), vec![1.0, 0.0, 0.0, 0.0])?;
+        index.add_node_embedding("similar".to_string(), vec![0.9, 0.1, 0.0, 0.0])?;
+        index.add_node_embedding("different".to_string(), vec![0.0, 1.0, 0.0, 0.0])?;
+
+        let search_config = SemanticSearchConfig {
+            min_similarity: 0.0, // Accept all results for this test
+            ..Default::default()
+        };
+        let search = SemanticSearch::new(index, search_config);
+        let results = search.find_similar_nodes(&[1.0, 0.0, 0.0, 0.0], 10)?;
+
+        // All scores should be in [0, 1]
+        for result in &results {
+            assert!(result.score >= 0.0 && result.score <= 1.0,
+                "Score {} out of valid range [0, 1]", result.score);
+        }
+
+        // Identical vector should have highest similarity (close to 1.0)
+        if !results.is_empty() {
+            let top_result = &results[0];
+            assert!(top_result.score > 0.9, "Identical vector should have score > 0.9");
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_min_similarity_filtering() -> Result<()> {
+        let config = EmbeddingConfig {
+            dimensions: 4,
+            ..Default::default()
+        };
+        let index = HybridIndex::new(config)?;
+        index.initialize_index(VectorIndexType::Node)?;
+
+        // Add embeddings
+        index.add_node_embedding("high_sim".to_string(), vec![1.0, 0.0, 0.0, 0.0])?;
+        index.add_node_embedding("low_sim".to_string(), vec![0.0, 0.0, 0.0, 1.0])?;
+
+        // Set high minimum similarity threshold
+        let search_config = SemanticSearchConfig {
+            min_similarity: 0.9,
+            ..Default::default()
+        };
+        let search = SemanticSearch::new(index, search_config);
+        let results = search.find_similar_nodes(&[1.0, 0.0, 0.0, 0.0], 10)?;
+
+        // Low similarity result should be filtered out
+        for result in &results {
+            assert!(result.score >= 0.9,
+                "Result with score {} should be filtered out (min: 0.9)", result.score);
+        }
+
+        Ok(())
+    }
 }
