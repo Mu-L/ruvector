@@ -193,10 +193,23 @@ impl MmapManager {
     /// * `node_id` - Node identifier
     ///
     /// # Returns
-    /// Byte offset in the memory-mapped file
+    /// Byte offset in the memory-mapped file, or None if overflow would occur
+    ///
+    /// # Security
+    /// Uses checked arithmetic to prevent integer overflow attacks.
     #[inline]
-    pub fn embedding_offset(&self, node_id: u64) -> usize {
-        (node_id as usize) * self.d_embed * std::mem::size_of::<f32>()
+    pub fn embedding_offset(&self, node_id: u64) -> Option<usize> {
+        let node_idx = usize::try_from(node_id).ok()?;
+        let elem_size = std::mem::size_of::<f32>();
+        node_idx
+            .checked_mul(self.d_embed)?
+            .checked_mul(elem_size)
+    }
+
+    /// Validate that a node_id is within bounds.
+    #[inline]
+    fn validate_node_id(&self, node_id: u64) -> bool {
+        (node_id as usize) < self.max_nodes
     }
 
     /// Get a read-only reference to a node's embedding.
@@ -208,10 +221,16 @@ impl MmapManager {
     /// Slice containing the embedding vector
     ///
     /// # Panics
-    /// Panics if node_id is out of bounds
+    /// Panics if node_id is out of bounds or would cause overflow
     pub fn get_embedding(&self, node_id: u64) -> &[f32] {
-        let offset = self.embedding_offset(node_id);
-        let end = offset + self.d_embed * std::mem::size_of::<f32>();
+        // Security: Validate bounds before any pointer arithmetic
+        assert!(self.validate_node_id(node_id), "node_id {} out of bounds (max: {})", node_id, self.max_nodes);
+
+        let offset = self.embedding_offset(node_id)
+            .expect("embedding offset calculation overflow");
+        let end = offset.checked_add(self.d_embed.checked_mul(std::mem::size_of::<f32>()).unwrap())
+            .expect("end offset overflow");
+        assert!(end <= self.mmap.len(), "embedding extends beyond mmap bounds");
 
         // Mark as accessed
         self.access_bitmap.set(node_id as usize);
@@ -230,15 +249,22 @@ impl MmapManager {
     /// * `data` - Embedding vector to write
     ///
     /// # Panics
-    /// Panics if node_id is out of bounds or data length doesn't match d_embed
+    /// Panics if node_id is out of bounds, data length doesn't match d_embed,
+    /// or offset calculation would overflow.
     pub fn set_embedding(&mut self, node_id: u64, data: &[f32]) {
+        // Security: Validate bounds first
+        assert!(self.validate_node_id(node_id), "node_id {} out of bounds (max: {})", node_id, self.max_nodes);
         assert_eq!(
             data.len(),
             self.d_embed,
             "Embedding data length must match d_embed"
         );
 
-        let offset = self.embedding_offset(node_id);
+        let offset = self.embedding_offset(node_id)
+            .expect("embedding offset calculation overflow");
+        let end = offset.checked_add(data.len().checked_mul(std::mem::size_of::<f32>()).unwrap())
+            .expect("end offset overflow");
+        assert!(end <= self.mmap.len(), "embedding extends beyond mmap bounds");
 
         // Mark as accessed and dirty
         self.access_bitmap.set(node_id as usize);
@@ -281,10 +307,18 @@ impl MmapManager {
     pub fn prefetch(&self, node_ids: &[u64]) {
         #[cfg(target_os = "linux")]
         {
+            #[allow(unused_imports)]
             use std::os::unix::io::AsRawFd;
 
             for &node_id in node_ids {
-                let offset = self.embedding_offset(node_id);
+                // Skip invalid node IDs
+                if !self.validate_node_id(node_id) {
+                    continue;
+                }
+                let offset = match self.embedding_offset(node_id) {
+                    Some(o) => o,
+                    None => continue,
+                };
                 let page_offset = (offset / self.page_size) * self.page_size;
                 let length = self.d_embed * std::mem::size_of::<f32>();
 
@@ -303,7 +337,9 @@ impl MmapManager {
         #[cfg(not(target_os = "linux"))]
         {
             for &node_id in node_ids {
-                let _ = self.get_embedding(node_id);
+                if self.validate_node_id(node_id) {
+                    let _ = self.get_embedding(node_id);
+                }
             }
         }
     }

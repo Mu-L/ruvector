@@ -71,10 +71,25 @@ pub struct JsVectorEntry {
     inner: VectorEntry,
 }
 
+/// Maximum allowed vector dimensions (security limit to prevent DoS)
+const MAX_VECTOR_DIMENSIONS: usize = 65536;
+
 #[wasm_bindgen]
 impl JsVectorEntry {
     #[wasm_bindgen(constructor)]
     pub fn new(vector: Float32Array, id: Option<String>, metadata: Option<JsValue>) -> Result<JsVectorEntry, JsValue> {
+        // Security: Validate vector dimensions before allocation
+        let vec_len = vector.length() as usize;
+        if vec_len == 0 {
+            return Err(JsValue::from_str("Vector cannot be empty"));
+        }
+        if vec_len > MAX_VECTOR_DIMENSIONS {
+            return Err(JsValue::from_str(&format!(
+                "Vector dimensions {} exceed maximum allowed {}",
+                vec_len, MAX_VECTOR_DIMENSIONS
+            )));
+        }
+
         let vector_data: Vec<f32> = vector.to_vec();
 
         let metadata = if let Some(meta) = metadata {

@@ -27,15 +27,36 @@ pub struct SoAVectorStorage {
 }
 
 impl SoAVectorStorage {
+    /// Maximum allowed dimensions to prevent overflow
+    const MAX_DIMENSIONS: usize = 65536;
+    /// Maximum allowed capacity to prevent overflow
+    const MAX_CAPACITY: usize = 1 << 24; // ~16M vectors
+
     /// Create a new SoA vector storage
+    ///
+    /// # Panics
+    /// Panics if dimensions or capacity exceed safe limits or would cause overflow.
     pub fn new(dimensions: usize, initial_capacity: usize) -> Self {
+        // Security: Validate inputs to prevent integer overflow
+        assert!(dimensions > 0 && dimensions <= Self::MAX_DIMENSIONS,
+            "dimensions must be between 1 and {}", Self::MAX_DIMENSIONS);
+        assert!(initial_capacity <= Self::MAX_CAPACITY,
+            "initial_capacity exceeds maximum of {}", Self::MAX_CAPACITY);
+
         let capacity = initial_capacity.next_power_of_two();
-        let total_elements = dimensions * capacity;
+
+        // Security: Use checked arithmetic to prevent overflow
+        let total_elements = dimensions
+            .checked_mul(capacity)
+            .expect("dimensions * capacity overflow");
+        let total_bytes = total_elements
+            .checked_mul(std::mem::size_of::<f32>())
+            .expect("total size overflow");
 
         let layout = Layout::from_size_align(
-            total_elements * std::mem::size_of::<f32>(),
+            total_bytes,
             CACHE_LINE_SIZE,
-        ).unwrap();
+        ).expect("invalid memory layout");
 
         let data = unsafe { alloc(layout) as *mut f32 };
 

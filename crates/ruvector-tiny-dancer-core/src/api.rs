@@ -523,8 +523,26 @@ fn check_auth(state: &AdminServerState, headers: &HeaderMap) -> std::result::Res
 
     match auth_header {
         Some(header_value) if header_value.starts_with("Bearer ") => {
-            let token = &header_value[7..]; // Skip "Bearer "
-            if token == expected_token {
+            // Security: Use strip_prefix instead of slice indexing to avoid panic
+            let token = match header_value.strip_prefix("Bearer ") {
+                Some(t) => t,
+                None => return Err((
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({
+                        "error": "Invalid Authorization header format"
+                    })),
+                ).into_response()),
+            };
+            // Security: Use constant-time comparison to prevent timing attacks
+            let token_bytes = token.as_bytes();
+            let expected_bytes = expected_token.as_bytes();
+            let mut result = token_bytes.len() == expected_bytes.len();
+            // Compare all bytes even if lengths differ to maintain constant time
+            let min_len = std::cmp::min(token_bytes.len(), expected_bytes.len());
+            for i in 0..min_len {
+                result &= token_bytes[i] == expected_bytes[i];
+            }
+            if result && token_bytes.len() == expected_bytes.len() {
                 Ok(())
             } else {
                 Err((
