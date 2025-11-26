@@ -205,6 +205,84 @@ RETURN related
 | Performance Tuning | [docs/optimization/PERFORMANCE_TUNING_GUIDE.md](./docs/optimization/PERFORMANCE_TUNING_GUIDE.md) |
 | API Reference | [docs/api/](./docs/api/) |
 
+## Crates
+
+All crates are published to [crates.io](https://crates.io) under the `ruvector-*` namespace.
+
+### Core Crates
+
+| Crate | Description | crates.io |
+|-------|-------------|-----------|
+| [ruvector-core](./crates/ruvector-core) | Vector database engine with HNSW indexing | [![crates.io](https://img.shields.io/crates/v/ruvector-core.svg)](https://crates.io/crates/ruvector-core) |
+| [ruvector-collections](./crates/ruvector-collections) | Collection and namespace management | [![crates.io](https://img.shields.io/crates/v/ruvector-collections.svg)](https://crates.io/crates/ruvector-collections) |
+| [ruvector-filter](./crates/ruvector-filter) | Vector filtering and metadata queries | [![crates.io](https://img.shields.io/crates/v/ruvector-filter.svg)](https://crates.io/crates/ruvector-filter) |
+| [ruvector-metrics](./crates/ruvector-metrics) | Performance metrics and monitoring | [![crates.io](https://img.shields.io/crates/v/ruvector-metrics.svg)](https://crates.io/crates/ruvector-metrics) |
+| [ruvector-snapshot](./crates/ruvector-snapshot) | Snapshot and persistence management | [![crates.io](https://img.shields.io/crates/v/ruvector-snapshot.svg)](https://crates.io/crates/ruvector-snapshot) |
+
+### Graph & GNN
+
+| Crate | Description | crates.io |
+|-------|-------------|-----------|
+| [ruvector-graph](./crates/ruvector-graph) | Hypergraph database with Neo4j-style Cypher | [![crates.io](https://img.shields.io/crates/v/ruvector-graph.svg)](https://crates.io/crates/ruvector-graph) |
+| [ruvector-graph-node](./crates/ruvector-graph-node) | Node.js bindings for graph operations | [![crates.io](https://img.shields.io/crates/v/ruvector-graph-node.svg)](https://crates.io/crates/ruvector-graph-node) |
+| [ruvector-graph-wasm](./crates/ruvector-graph-wasm) | WASM bindings for browser graph queries | [![crates.io](https://img.shields.io/crates/v/ruvector-graph-wasm.svg)](https://crates.io/crates/ruvector-graph-wasm) |
+| [ruvector-gnn](./crates/ruvector-gnn) | Graph Neural Network layers and training | [![crates.io](https://img.shields.io/crates/v/ruvector-gnn.svg)](https://crates.io/crates/ruvector-gnn) |
+| [ruvector-gnn-node](./crates/ruvector-gnn-node) | Node.js bindings for GNN inference | [![crates.io](https://img.shields.io/crates/v/ruvector-gnn-node.svg)](https://crates.io/crates/ruvector-gnn-node) |
+| [ruvector-gnn-wasm](./crates/ruvector-gnn-wasm) | WASM bindings for browser GNN | [![crates.io](https://img.shields.io/crates/v/ruvector-gnn-wasm.svg)](https://crates.io/crates/ruvector-gnn-wasm) |
+
+### Distributed Systems
+
+| Crate | Description | crates.io |
+|-------|-------------|-----------|
+| [ruvector-cluster](./crates/ruvector-cluster) | Cluster management and coordination | [![crates.io](https://img.shields.io/crates/v/ruvector-cluster.svg)](https://crates.io/crates/ruvector-cluster) |
+| [ruvector-raft](./crates/ruvector-raft) | Raft consensus implementation | [![crates.io](https://img.shields.io/crates/v/ruvector-raft.svg)](https://crates.io/crates/ruvector-raft) |
+| [ruvector-replication](./crates/ruvector-replication) | Data replication and synchronization | [![crates.io](https://img.shields.io/crates/v/ruvector-replication.svg)](https://crates.io/crates/ruvector-replication) |
+
+### AI Agent Routing (Tiny Dancer)
+
+| Crate | Description | crates.io |
+|-------|-------------|-----------|
+| [ruvector-tiny-dancer-core](./crates/ruvector-tiny-dancer-core) | FastGRNN neural inference for AI routing | [![crates.io](https://img.shields.io/crates/v/ruvector-tiny-dancer-core.svg)](https://crates.io/crates/ruvector-tiny-dancer-core) |
+| [ruvector-tiny-dancer-node](./crates/ruvector-tiny-dancer-node) | Node.js bindings for AI routing | [![crates.io](https://img.shields.io/crates/v/ruvector-tiny-dancer-node.svg)](https://crates.io/crates/ruvector-tiny-dancer-node) |
+| [ruvector-tiny-dancer-wasm](./crates/ruvector-tiny-dancer-wasm) | WASM bindings for browser AI routing | [![crates.io](https://img.shields.io/crates/v/ruvector-tiny-dancer-wasm.svg)](https://crates.io/crates/ruvector-tiny-dancer-wasm) |
+
+### Router (Semantic Routing)
+
+| Crate | Description | crates.io |
+|-------|-------------|-----------|
+| [ruvector-router-core](./crates/ruvector-router-core) | Core semantic routing engine | [![crates.io](https://img.shields.io/crates/v/ruvector-router-core.svg)](https://crates.io/crates/ruvector-router-core) |
+| [ruvector-router-cli](./crates/ruvector-router-cli) | CLI for router testing and benchmarking | [![crates.io](https://img.shields.io/crates/v/ruvector-router-cli.svg)](https://crates.io/crates/ruvector-router-cli) |
+| [ruvector-router-ffi](./crates/ruvector-router-ffi) | FFI bindings for other languages | [![crates.io](https://img.shields.io/crates/v/ruvector-router-ffi.svg)](https://crates.io/crates/ruvector-router-ffi) |
+| [ruvector-router-wasm](./crates/ruvector-router-wasm) | WASM bindings for browser routing | [![crates.io](https://img.shields.io/crates/v/ruvector-router-wasm.svg)](https://crates.io/crates/ruvector-router-wasm) |
+
+### Bindings & Tools
+
+| Crate | Description | crates.io |
+|-------|-------------|-----------|
+| [ruvector-node](./crates/ruvector-node) | Main Node.js bindings (napi-rs) | [![crates.io](https://img.shields.io/crates/v/ruvector-node.svg)](https://crates.io/crates/ruvector-node) |
+| [ruvector-wasm](./crates/ruvector-wasm) | Main WASM bindings for browsers | [![crates.io](https://img.shields.io/crates/v/ruvector-wasm.svg)](https://crates.io/crates/ruvector-wasm) |
+| [ruvector-cli](./crates/ruvector-cli) | Command-line interface | [![crates.io](https://img.shields.io/crates/v/ruvector-cli.svg)](https://crates.io/crates/ruvector-cli) |
+| [ruvector-server](./crates/ruvector-server) | HTTP/gRPC server | [![crates.io](https://img.shields.io/crates/v/ruvector-server.svg)](https://crates.io/crates/ruvector-server) |
+
+### npm Packages
+
+| Package | Description | npm |
+|---------|-------------|-----|
+| [ruvector](https://www.npmjs.com/package/ruvector) | All-in-one Node.js package (vectors, graphs, GNN) | [![npm](https://img.shields.io/npm/v/ruvector.svg)](https://www.npmjs.com/package/ruvector) |
+| [@ruvector/wasm](https://www.npmjs.com/package/@ruvector/wasm) | WASM bindings for browsers | [![npm](https://img.shields.io/npm/v/@ruvector/wasm.svg)](https://www.npmjs.com/package/@ruvector/wasm) |
+| [@ruvector/graph](https://www.npmjs.com/package/@ruvector/graph) | Graph database with Cypher queries | [![npm](https://img.shields.io/npm/v/@ruvector/graph.svg)](https://www.npmjs.com/package/@ruvector/graph) |
+| [@ruvector/gnn](https://www.npmjs.com/package/@ruvector/gnn) | Graph Neural Network layers | [![npm](https://img.shields.io/npm/v/@ruvector/gnn.svg)](https://www.npmjs.com/package/@ruvector/gnn) |
+| [@ruvector/tiny-dancer](https://www.npmjs.com/package/@ruvector/tiny-dancer) | AI agent routing (FastGRNN) | [![npm](https://img.shields.io/npm/v/@ruvector/tiny-dancer.svg)](https://www.npmjs.com/package/@ruvector/tiny-dancer) |
+| [@ruvector/router](https://www.npmjs.com/package/@ruvector/router) | Semantic routing engine | [![npm](https://img.shields.io/npm/v/@ruvector/router.svg)](https://www.npmjs.com/package/@ruvector/router) |
+
+```bash
+# Install all-in-one package
+npm install ruvector
+
+# Or install individual packages
+npm install @ruvector/graph @ruvector/gnn
+```
+
 ## Project Structure
 
 ```
