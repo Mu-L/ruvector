@@ -231,22 +231,114 @@ pub enum LossType {
 pub struct Loss;
 
 impl Loss {
-    /// TODO: Compute loss
+    /// Compute loss value
+    ///
+    /// # Arguments
+    /// * `loss_type` - Type of loss function to use
+    /// * `predictions` - Model predictions (must match targets shape)
+    /// * `targets` - Ground truth targets
+    ///
+    /// # Returns
+    /// * `Ok(f32)` - Computed loss value
+    /// * `Err(GnnError)` - If shapes don't match
     pub fn compute(
         loss_type: LossType,
         predictions: &Array2<f32>,
         targets: &Array2<f32>,
     ) -> Result<f32> {
-        unimplemented!("TODO: Implement loss computation")
+        // Validate shapes match
+        if predictions.shape() != targets.shape() {
+            return Err(GnnError::dimension_mismatch(
+                format!("{:?}", predictions.shape()),
+                format!("{:?}", targets.shape()),
+            ));
+        }
+
+        const EPSILON: f32 = 1e-7;
+
+        let loss = match loss_type {
+            LossType::Mse => {
+                // Mean Squared Error: mean((pred - target)^2)
+                let diff = predictions - targets;
+                let squared_diff = diff.mapv(|x| x * x);
+                squared_diff.mean().unwrap_or(0.0)
+            }
+            LossType::CrossEntropy => {
+                // Cross Entropy: -sum(target * log(pred + epsilon))
+                let log_preds = predictions.mapv(|x| (x + EPSILON).ln());
+                let product = targets * log_preds;
+                -product.sum()
+            }
+            LossType::BinaryCrossEntropy => {
+                // Binary Cross Entropy: -mean(target * log(pred) + (1-target) * log(1-pred))
+                let term1 = targets.iter().zip(predictions.iter()).map(|(&t, &p)| {
+                    t * (p + EPSILON).ln()
+                });
+                let term2 = targets.iter().zip(predictions.iter()).map(|(&t, &p)| {
+                    (1.0 - t) * (1.0 - p + EPSILON).ln()
+                });
+                let sum: f32 = term1.zip(term2).map(|(t1, t2)| t1 + t2).sum();
+                -sum / (predictions.len() as f32)
+            }
+        };
+
+        Ok(loss)
     }
 
-    /// TODO: Compute loss gradient
+    /// Compute loss gradient
+    ///
+    /// # Arguments
+    /// * `loss_type` - Type of loss function to use
+    /// * `predictions` - Model predictions (must match targets shape)
+    /// * `targets` - Ground truth targets
+    ///
+    /// # Returns
+    /// * `Ok(Array2<f32>)` - Gradient of loss with respect to predictions
+    /// * `Err(GnnError)` - If shapes don't match
     pub fn gradient(
         loss_type: LossType,
         predictions: &Array2<f32>,
         targets: &Array2<f32>,
     ) -> Result<Array2<f32>> {
-        unimplemented!("TODO: Implement loss gradient")
+        // Validate shapes match
+        if predictions.shape() != targets.shape() {
+            return Err(GnnError::dimension_mismatch(
+                format!("{:?}", predictions.shape()),
+                format!("{:?}", targets.shape()),
+            ));
+        }
+
+        const EPSILON: f32 = 1e-7;
+        let n = predictions.len() as f32;
+
+        let gradient = match loss_type {
+            LossType::Mse => {
+                // MSE gradient: 2 * (pred - target) / n
+                let diff = predictions - targets;
+                diff.mapv(|x| 2.0 * x / n)
+            }
+            LossType::CrossEntropy => {
+                // Cross Entropy gradient: -target / (pred + epsilon)
+                let mut grad = Array2::zeros(predictions.dim());
+                for (i, (&t, &p)) in targets.iter().zip(predictions.iter()).enumerate() {
+                    let (row, col) = (i / predictions.ncols(), i % predictions.ncols());
+                    grad[[row, col]] = -t / (p + EPSILON);
+                }
+                grad
+            }
+            LossType::BinaryCrossEntropy => {
+                // Binary Cross Entropy gradient: (pred - target) / (pred * (1 - pred) + epsilon)
+                let mut grad = Array2::zeros(predictions.dim());
+                for (i, (&t, &p)) in targets.iter().zip(predictions.iter()).enumerate() {
+                    let (row, col) = (i / predictions.ncols(), i % predictions.ncols());
+                    let denom = p * (1.0 - p) + EPSILON;
+                    grad[[row, col]] = (p - t) / denom;
+                }
+                grad
+            }
+        };
+
+        Ok(gradient)
     }
 }
 
