@@ -177,7 +177,15 @@ pub use certificate::{
     AuditEntry, AuditEntryType, AuditData,
 };
 pub use cluster::{ClusterHierarchy, Cluster};
+pub use cluster::hierarchy::{
+    ThreeLevelHierarchy, Expander, Precluster, HierarchyCluster,
+    MirrorCut, HierarchyConfig, HierarchyStats,
+};
 pub use fragment::{Fragment, FragmentResult, FragmentingAlgorithm};
+pub use fragmentation::{
+    Fragmentation, FragmentationConfig, TrimResult,
+    Fragment as FragmentationFragment,
+};
 pub use compact::{
     BitSet256, CompactEdge, CompactWitness, CompactAdjacency, CompactCoreState,
     CoreResult, CompactVertexId, CompactEdgeId, MAX_VERTICES_PER_CORE, MAX_EDGES_PER_CORE,
