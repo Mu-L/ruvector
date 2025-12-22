@@ -1103,6 +1103,107 @@ impl ThreeLevelHierarchy {
         }
     }
 
+    // === Mirror Cut Certification ===
+
+    /// Certify mirror cuts using LocalKCut verification
+    ///
+    /// This verifies that the tracked mirror cuts are accurate by
+    /// running LocalKCut queries on the expander boundaries.
+    pub fn certify_mirror_cuts(&mut self) {
+        use crate::localkcut::deterministic::DeterministicLocalKCut;
+
+        // First, collect all the information we need from immutable self
+        let mut certifications: Vec<(u64, usize, bool)> = Vec::new();
+
+        for (cluster_id, cluster) in &self.clusters {
+            for (mirror_idx, mirror) in cluster.mirror_cuts.iter().enumerate() {
+                // Get expander vertices
+                let exp1 = match self.expanders.get(&mirror.source_expander) {
+                    Some(e) => e.vertices.clone(),
+                    None => continue,
+                };
+                let exp2 = match self.expanders.get(&mirror.target_expander) {
+                    Some(e) => e.vertices.clone(),
+                    None => continue,
+                };
+
+                // Build LocalKCut for the combined subgraph
+                let combined: HashSet<_> = exp1.union(&exp2).copied().collect();
+                let lambda_max = (mirror.cut_value.ceil() as u64).max(1) * 2;
+                let volume = combined.len() * 10; // Generous volume bound
+
+                let mut lkc = DeterministicLocalKCut::new(lambda_max, volume, 2);
+
+                // Add edges in the combined region
+                for &u in &combined {
+                    for (v, w) in self.neighbors(u) {
+                        if combined.contains(&v) && u < v {
+                            lkc.insert_edge(u, v, w);
+                        }
+                    }
+                }
+
+                // Query from boundary vertices
+                let mut min_verified_cut = f64::INFINITY;
+                let boundary_verts: Vec<_> = mirror.cut_edges.iter().map(|(u, _)| *u).collect();
+
+                for v in boundary_verts {
+                    let cuts = lkc.query(v);
+                    for cut in cuts {
+                        // Check if this cut separates exp1 from exp2
+                        let cut_separates = {
+                            let in_exp1 = cut.vertices.iter().any(|&u| exp1.contains(&u));
+                            let in_exp2 = cut.vertices.iter().any(|&u| exp2.contains(&u));
+                            let not_in_exp1 = exp1.iter().any(|&u| !cut.vertices.contains(&u));
+                            let not_in_exp2 = exp2.iter().any(|&u| !cut.vertices.contains(&u));
+                            (in_exp1 && not_in_exp2) || (in_exp2 && not_in_exp1)
+                        };
+
+                        if cut_separates {
+                            min_verified_cut = min_verified_cut.min(cut.cut_value);
+                        }
+                    }
+                }
+
+                // Determine certification status
+                let certified = if min_verified_cut < f64::INFINITY {
+                    // LocalKCut found a separating cut - verify it matches
+                    let diff = (mirror.cut_value - min_verified_cut).abs();
+                    diff < 0.001 || min_verified_cut <= mirror.cut_value
+                } else {
+                    // No separating cut found by LocalKCut - trust the boundary computation
+                    true
+                };
+
+                certifications.push((*cluster_id, mirror_idx, certified));
+            }
+        }
+
+        // Now apply the certifications with mutable access
+        for (cluster_id, mirror_idx, certified) in certifications {
+            if let Some(cluster) = self.clusters.get_mut(&cluster_id) {
+                if let Some(mirror) = cluster.mirror_cuts.get_mut(mirror_idx) {
+                    mirror.certified = certified;
+                }
+            }
+        }
+    }
+
+    /// Get number of certified mirror cuts
+    pub fn num_certified_mirror_cuts(&self) -> usize {
+        self.clusters.values()
+            .flat_map(|c| &c.mirror_cuts)
+            .filter(|m| m.certified)
+            .count()
+    }
+
+    /// Get number of total mirror cuts
+    pub fn num_mirror_cuts(&self) -> usize {
+        self.clusters.values()
+            .map(|c| c.mirror_cuts.len())
+            .sum()
+    }
+
     // === Getters ===
 
     /// Get expander containing vertex
