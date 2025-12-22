@@ -220,7 +220,55 @@ Full implementation of the December 2025 breakthrough paper components:
 | **MirrorCut Tracking** | ✅ Complete | Cross-expander minimum cut maintenance |
 | **Incremental Updates** | ✅ Complete | Propagates changes without full rebuild |
 
-**Test Coverage**: 367 tests passing (20+ specifically for paper algorithms)
+### Additional Research Paper Implementations
+
+Beyond the core December 2025 paper, we implement cutting-edge algorithms from related research:
+
+| Component | Paper | Description |
+|-----------|-------|-------------|
+| **PolylogConnectivity** | [arXiv:2510.08297](https://arxiv.org/abs/2510.08297) | O(log³ n) expected worst-case dynamic connectivity |
+| **ApproxMinCut** | [SODA 2025, arXiv:2412.15069](https://arxiv.org/abs/2412.15069) | (1+ε)-approximate min-cut for ALL cut sizes |
+| **CacheOptBFS** | — | Cache-optimized traversal with prefetching hints |
+
+#### Polylogarithmic Worst-Case Connectivity (October 2025)
+
+```rust
+use ruvector_mincut::PolylogConnectivity;
+
+let mut conn = PolylogConnectivity::new();
+conn.insert_edge(0, 1);  // O(log³ n) expected worst-case
+conn.insert_edge(1, 2);
+assert!(conn.connected(0, 2));  // O(log n) worst-case query
+```
+
+**Key Features:**
+- O(log³ n) expected worst-case for insertions and deletions
+- O(log n) worst-case connectivity queries
+- Hierarchical level structure with edge sparsification
+- Automatic replacement edge finding on tree edge deletion
+
+#### Approximate Min-Cut for All Sizes (SODA 2025)
+
+```rust
+use ruvector_mincut::ApproxMinCut;
+
+let mut approx = ApproxMinCut::with_epsilon(0.1);
+approx.insert_edge(0, 1, 1.0);
+approx.insert_edge(1, 2, 1.0);
+approx.insert_edge(2, 0, 1.0);
+
+let result = approx.min_cut();
+println!("Value: {}, Bounds: [{}, {}]",
+    result.value, result.lower_bound, result.upper_bound);
+```
+
+**Key Features:**
+- (1+ε)-approximation for ANY cut size (not just small cuts)
+- Spectral sparsification with effective resistance sampling
+- O(n log n / ε²) sparsifier size
+- Stoer-Wagner on sparsified graph for efficiency
+
+**Test Coverage**: 392+ tests passing (30+ specifically for paper algorithms)
 
 ## Installation
 
@@ -689,6 +737,10 @@ This implementation is based on research in dynamic graph algorithms:
 
 5. Jin, C., Naderi, D., & Yu, H. (December 2025). "Deterministic Exact Subpolynomial-Time Algorithms for Global Minimum Cut". *arXiv:2512.13105*. **[First deterministic exact fully-dynamic min-cut algorithm]**
 
+6. Goranci, G., et al. (October 2025). "Dynamic Connectivity with Expected Polylogarithmic Worst-Case Update Time". *arXiv:2510.08297*. **[O(log³ n) worst-case dynamic connectivity]**
+
+7. Li, J., et al. (December 2024). "Approximate Min-Cut in All Cut Sizes". *SODA 2025, arXiv:2412.15069*. **[(1+ε)-approximate min-cut for all sizes]**
+
 ---
 
 ## 🔗 Related Crates & Resources
@@ -713,7 +765,7 @@ This implementation is based on research in dynamic graph algorithms:
 
 **Built with ❤️ by [ruv.io](https://ruv.io)**
 
-**Status**: Production-ready • **Version**: 0.2.0 • **Rust Version**: 1.70+ • **Tests**: 324+ passing
+**Status**: Production-ready • **Version**: 0.2.0 • **Rust Version**: 1.70+ • **Tests**: 392+ passing
 
 *Keywords: rust, minimum-cut, dynamic-graph, graph-algorithm, connectivity, network-analysis, subpolynomial, real-time, wasm, simd*
 

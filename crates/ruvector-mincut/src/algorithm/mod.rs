@@ -4,8 +4,14 @@
 //! - O(n^{o(1)}) amortized update time
 //! - Support for edge insertions and deletions
 //! - Both exact and approximate modes
+//!
+//! ## Modules
+//!
+//! - [`replacement`]: Replacement edge index for tree edge deletions
+//! - [`approximate`]: (1+ε)-approximate min-cut for all cut sizes (SODA 2025)
 
 pub mod replacement;
+pub mod approximate;
 
 pub use replacement::{ReplacementEdgeIndex, ReplacementIndexStats};
 

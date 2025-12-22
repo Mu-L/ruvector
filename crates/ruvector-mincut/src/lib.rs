@@ -157,6 +157,7 @@ pub mod wasm;
 pub use error::{MinCutError, Result};
 pub use graph::{DynamicGraph, Edge, GraphStats, VertexId, EdgeId, Weight};
 pub use algorithm::{DynamicMinCut, MinCutBuilder, MinCutConfig, MinCutResult, AlgorithmStats};
+pub use algorithm::approximate::{ApproxMinCut, ApproxMinCutConfig, ApproxMinCutResult, ApproxMinCutStats};
 pub use tree::{HierarchicalDecomposition, DecompositionNode, LevelInfo};
 pub use witness::{WitnessTree, LazyWitnessTree, EdgeWitness};
 pub use linkcut::LinkCutTree;
@@ -169,6 +170,7 @@ pub use localkcut::{
     DeterministicLocalKCut, DeterministicFamilyGenerator,
 };
 pub use connectivity::DynamicConnectivity;
+pub use connectivity::polylog::{PolylogConnectivity, PolylogStats};
 pub use instance::{ProperCutInstance, InstanceResult, WitnessHandle, StubInstance, BoundedInstance};
 pub use wrapper::MinCutWrapper;
 pub use certificate::{
@@ -231,7 +233,7 @@ pub mod prelude {
     //! Prelude module with commonly used types
 
     pub use crate::{
-        DynamicMinCut, MinCutBuilder, MinCutConfig, MinCutResult,
+        DynamicMinCut, MinCutBuilder, MinCutConfig, MinCutResult, ApproxMinCut, ApproxMinCutConfig,
         DynamicGraph, Edge, VertexId, EdgeId, Weight,
         MinCutError, Result,
         AlgorithmStats,
@@ -240,7 +242,7 @@ pub mod prelude {
         LocalKCutQuery, PaperLocalKCutResult, LocalKCutOracle,
         DeterministicLocalKCut, DeterministicFamilyGenerator,
         CutCertificate, CertificateError, AuditLogger,
-        DynamicConnectivity,
+        DynamicConnectivity, PolylogConnectivity, PolylogStats,
         ProperCutInstance, InstanceResult, WitnessHandle, StubInstance, BoundedInstance,
         MinCutWrapper,
         ClusterHierarchy, Cluster,

@@ -5,15 +5,28 @@
 //!
 //! # Overview
 //!
-//! This module provides a dynamic connectivity data structure that supports:
-//! - Edge insertions in O(log n) time (via Euler Tour Tree)
-//! - Edge deletions via full rebuild in O(m·α(n)) time (fallback)
-//! - Connectivity queries in O(log n) time (via Euler Tour Tree)
+//! This module provides dynamic connectivity data structures:
+//!
+//! - [`DynamicConnectivity`]: Euler Tour Tree backend with union-find fallback
+//!   - Edge insertions in O(log n) time
+//!   - Edge deletions via full rebuild in O(m·α(n)) time
+//!   - Connectivity queries in O(log n) time
+//!
+//! - [`PolylogConnectivity`]: Polylogarithmic worst-case connectivity (arXiv:2510.08297)
+//!   - Edge insertions in O(log³ n) expected worst-case
+//!   - Edge deletions in O(log³ n) expected worst-case
+//!   - Connectivity queries in O(log n) worst-case
 //!
 //! # Implementation
 //!
-//! Uses Euler Tour Trees as primary backend for O(log n) operations.
+//! The primary backend uses Euler Tour Trees for O(log n) operations.
 //! Falls back to union-find rebuild for deletions until full ETT cut is implemented.
+//!
+//! The polylog backend uses a hierarchy of O(log n) levels with edge sparsification
+//! via low-congestion shortcuts for guaranteed worst-case bounds.
+
+pub mod polylog;
+pub mod cache_opt;
 
 use std::collections::{HashMap, HashSet};
 use crate::graph::VertexId;
