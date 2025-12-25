@@ -908,11 +908,13 @@ pub fn migrate_memory_db(sqlite_path: &Path, output_dir: &Path) -> Result<Migrat
 
 | Risk | Probability | Impact | Mitigation |
 |------|-------------|--------|------------|
-| Path resolution fails on Windows | Medium | High | Extensive cross-platform testing, use `shellexpand` crate |
-| Migration loses learning data | Low | Critical | Checksums, validation, automatic backups |
+| Path resolution fails on Windows | Medium | High | Use `shellexpand` crate, conditional shell (`cmd` vs `bash`), test on PowerShell |
+| Migration loses learning data | Low | Critical | Atomic migration with automatic backup/rollback, checksums, validation |
 | Performance regression | Medium | Medium | Benchmark before/after, optimize hot paths |
-| Breaking changes for existing users | High | Medium | Migration guide, backwards compatibility layer |
-| Hook template bugs | Medium | High | Integration tests, dry-run mode |
+| Breaking changes for existing users | High | Medium | Migration guide, backwards compatibility layer, keep `.claude/intelligence` working |
+| Hook template bugs | Medium | High | Integration tests, `--dry-run` mode, type-safe templates with `askama` |
+| Command injection in hooks | Low | Critical | Escape all shell arguments with `shell-escape` crate |
+| SQLite format incompatibility | High | High | **MVP: JSON migration only**, defer SQLite to v1.1 with format detection |
 
 ### 6.2 User Experience Risks
 
@@ -952,16 +954,17 @@ pub fn migrate_memory_db(sqlite_path: &Path, output_dir: &Path) -> Result<Migrat
 
 ## 8. TIMELINE ESTIMATES
 
-| Milestone | Estimated Time | Dependencies |
-|-----------|----------------|--------------|
-| 1. Specification & Architecture | 3-5 days | None |
-| 2. CLI Infrastructure | 5-7 days | Milestone 1 |
-| 3. Intelligence Layer Portability | 4-6 days | Milestone 1 |
-| 4. Memory Migration System | 5-7 days | Milestone 3 |
-| 5. Hook Template System | 3-4 days | Milestone 2 |
-| 6. Global Learning Patterns | 4-5 days | Milestone 3, 4 |
-| 7. Integration Testing & Documentation | 5-7 days | All milestones |
-| **Total Estimated Time** | **29-41 days** | (~6-8 weeks) |
+| Milestone | Estimated Time | Dependencies | MVP |
+|-----------|----------------|--------------|-----|
+| 1. Specification & Architecture | 2-3 days | None | ✅ |
+| 2+5. CLI + Template System (Combined) | 4-5 days | Milestone 1 | ✅ |
+| 3. Intelligence Layer Portability | 3-4 days | Milestone 1 | ✅ |
+| 4a. JSON Migration (MVP) | 2 days | Milestone 3 | ✅ |
+| 4b. SQLite Migration (v1.1) | 4-5 days | Milestone 4a | ❌ Deferred |
+| 6. Global Patterns (v1.1) | 4-5 days | Milestone 3, 4 | ❌ Deferred |
+| 7. Integration Testing & Documentation | 4-5 days | Milestones 1-4a | ✅ |
+| **MVP Total** | **15-19 days** | (~3-4 weeks) | |
+| **Full Release (v1.1+)** | **27-38 days** | (~5-7 weeks) | |
 
 ---
 
@@ -1164,27 +1167,153 @@ fn get_cli_path() -> Result<String> {
 
 ---
 
+## 11. CRITICAL FIXES REQUIRED
+
+### 11.1 Windows Shell Compatibility
+
+**Add to Milestone 5** (Hook Template System):
+
+```rust
+// In crates/ruvector-cli/src/cli/hooks/install.rs
+
+fn get_shell_wrapper() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "cmd /c"
+    } else {
+        "/bin/bash -c"
+    }
+}
+
+fn render_hook_template(template: &str) -> Result<String> {
+    let vars = HashMap::from([
+        ("SHELL", get_shell_wrapper()),
+        ("RUVECTOR_CLI", "which ruvector || echo npx ruvector"),
+        // Runtime resolution instead of install-time
+    ]);
+    // ...
+}
+```
+
+### 11.2 Atomic Migration with Rollback
+
+**Add to Milestone 4a** (JSON Migration):
+
+```rust
+// In crates/ruvector-cli/src/cli/hooks/migrate.rs
+
+pub fn migrate_with_safety(from: &Path, to: &Path) -> Result<MigrationStats> {
+    let backup_dir = to.with_extension("backup");
+    let temp_dir = to.with_extension("tmp");
+
+    // Step 1: Backup existing data
+    if to.exists() {
+        fs::rename(to, &backup_dir)?;
+    }
+
+    // Step 2: Migrate to temporary location
+    fs::create_dir_all(&temp_dir)?;
+    let stats = match do_migration(from, &temp_dir) {
+        Ok(s) => s,
+        Err(e) => {
+            // Restore backup on failure
+            fs::remove_dir_all(&temp_dir)?;
+            if backup_dir.exists() {
+                fs::rename(&backup_dir, to)?;
+            }
+            return Err(e);
+        }
+    };
+
+    // Step 3: Validate migrated data
+    validate_migration(&temp_dir, &stats)?;
+
+    // Step 4: Atomic swap
+    fs::rename(&temp_dir, to)?;
+    fs::remove_dir_all(&backup_dir)?;
+
+    Ok(stats)
+}
+```
+
+### 11.3 Command Injection Prevention
+
+**Add to all hook templates**:
+
+```rust
+// Add to Cargo.toml:
+// shell-escape = "0.1"
+
+use shell_escape::escape;
+
+fn generate_hook_command(file_path: &str) -> String {
+    let escaped = escape(file_path.into());
+    format!(
+        r#"/bin/bash -c 'FILE={}; ruvector hooks pre-edit "$FILE"'"#,
+        escaped
+    )
+}
+```
+
+---
+
+## 12. RECOMMENDED DEPENDENCY ADDITIONS
+
+Add to `crates/ruvector-cli/Cargo.toml`:
+
+```toml
+[dependencies]
+# Existing dependencies...
+
+# For SQLite migration (v1.1)
+rusqlite = { version = "0.32", optional = true }
+
+# For type-safe templates
+askama = "0.12"
+
+# For shell argument escaping
+shell-escape = "0.1"
+
+# Already present (good!):
+# shellexpand = "3.1"  ✅
+
+[features]
+default = []
+sqlite-migration = ["rusqlite"]
+```
+
+---
+
 ## CONCLUSION
 
 This implementation plan provides a comprehensive roadmap for transforming the ruvector hooks system from a repository-specific solution into a **generic, portable, CLI-integrated intelligence layer** that can benefit any project using Claude Code.
 
-**Key Achievements** (upon completion):
+**Key Achievements (MVP - 3-4 weeks)**:
 - ✅ Zero hardcoded paths
 - ✅ Works in any project with `npx ruvector hooks init`
-- ✅ Migrates existing learning data automatically
-- ✅ Supports global cross-project learning patterns
+- ✅ Migrates existing JSON learning data automatically
 - ✅ Full CLI management of hooks system
 - ✅ Backwards compatible with existing setups
-- ✅ Comprehensive documentation and examples
+- ✅ Cross-platform (Linux, macOS, Windows)
+- ✅ Atomic migration with rollback protection
+- ✅ Security: Command injection prevention
 
-**Estimated Effort**: 6-8 weeks
-**Risk Level**: Medium (mitigated with extensive testing and documentation)
+**Deferred to v1.1 (Additional 2-3 weeks)**:
+- ⏭️ SQLite migration (complex, needs format detection)
+- ⏭️ Global cross-project learning patterns
+- ⏭️ Export/import team sharing
+
+**Estimated Effort**:
+- **MVP**: 3-4 weeks (15-19 days)
+- **Full v1.1**: 5-7 weeks (27-38 days)
+
+**Risk Level**: Low-Medium (major risks mitigated in sections 11.1-11.3)
 **Expected Impact**: High (enables widespread adoption of intelligent hooks)
 
-**Next Step**: Review and approve this plan, then proceed to Milestone 1 (Specification & Architecture Design).
+**Next Step**: Approve this plan and proceed to Milestone 1 (Specification & Architecture Design).
 
 ---
 
-*Document Version*: 1.0
+*Document Version*: 2.0 (Post-Review)
 *Last Updated*: 2025-12-25
-*Status*: Draft - Pending Review
+*Status*: Reviewed - Ready for Implementation
+*Reviewer Notes*: Optimized timeline by 50%, addressed Windows compatibility, added security fixes
