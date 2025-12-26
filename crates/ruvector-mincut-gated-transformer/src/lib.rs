@@ -99,6 +99,7 @@ pub mod model;
 pub mod gate;
 pub mod spike;
 pub mod kernel;
+pub mod arena;
 pub mod attention;
 pub mod ffn;
 pub mod mod_routing;
@@ -127,6 +128,7 @@ pub use state::RuntimeState;
 pub use model::{MincutGatedTransformer, QuantizedWeights, WeightsLoader};
 pub use gate::{GateController, TierDecision};
 pub use spike::SpikeScheduler;
+pub use arena::{WeightArena, WeightRef, LayerWeights, calculate_arena_size};
 pub use mod_routing::{
     MincutDepthRouter, ModRoutingConfig, TokenRoute, RoutingStats,
 };

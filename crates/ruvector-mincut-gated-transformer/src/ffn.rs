@@ -9,8 +9,8 @@
 //! ## SIMD Optimization
 //!
 //! When the `simd` feature is enabled, uses vectorized GELU and quantization:
-//! - x86_64: AVX2 for 8 f32 ops/cycle
-//! - Expected speedup: 6-8× over scalar
+//! - x86_64: AVX2 for 8 f32 ops/cycle (6-8× speedup)
+//! - aarch64: NEON for 4 f32 ops/cycle (4× speedup)
 //!
 //! ## References
 //!
@@ -154,6 +154,128 @@ unsafe fn quantize_f32_to_i8_simd(input: &[f32], inv_scale: f32, output: &mut [i
     }
 }
 
+// =============================================================================
+// NEON SIMD implementations for aarch64
+// =============================================================================
+
+/// SIMD GELU for 4 f32 values using NEON.
+///
+/// Expected speedup: 4× over scalar.
+#[cfg(all(feature = "simd", target_arch = "aarch64"))]
+#[inline]
+unsafe fn gelu_approx_neon(x: core::arch::aarch64::float32x4_t) -> core::arch::aarch64::float32x4_t {
+    use core::arch::aarch64::*;
+
+    // Constants
+    let sqrt_2_over_pi = vdupq_n_f32(0.7978845608);
+    let coeff = vdupq_n_f32(0.044715);
+    let half = vdupq_n_f32(0.5);
+    let one = vdupq_n_f32(1.0);
+    let c27 = vdupq_n_f32(27.0);
+    let c9 = vdupq_n_f32(9.0);
+
+    // x^3
+    let x2 = vmulq_f32(x, x);
+    let x3 = vmulq_f32(x2, x);
+
+    // inner = sqrt(2/pi) * (x + 0.044715 * x^3)
+    let inner = vmulq_f32(sqrt_2_over_pi, vaddq_f32(x, vmulq_f32(coeff, x3)));
+
+    // fast_tanh: (x * (27 + x^2)) / (27 + 9*x^2)
+    let inner2 = vmulq_f32(inner, inner);
+    let num = vmulq_f32(inner, vaddq_f32(c27, inner2));
+    let den = vaddq_f32(c27, vmulq_f32(c9, inner2));
+
+    // Division using reciprocal estimate + Newton-Raphson
+    let den_recip = vrecpeq_f32(den);
+    let den_recip = vmulq_f32(vrecpsq_f32(den, den_recip), den_recip);
+    let tanh_val = vmulq_f32(num, den_recip);
+
+    // 0.5 * x * (1 + tanh)
+    vmulq_f32(half, vmulq_f32(x, vaddq_f32(one, tanh_val)))
+}
+
+/// Apply GELU activation using NEON SIMD.
+#[cfg(all(feature = "simd", target_arch = "aarch64"))]
+unsafe fn apply_gelu_neon(input: &[i32], scale: f32, output: &mut [f32]) {
+    use core::arch::aarch64::*;
+
+    let scale_vec = vdupq_n_f32(scale);
+    let chunks = input.len() / 4;
+
+    // Process 4 elements at a time
+    for i in 0..chunks {
+        let offset = i * 4;
+
+        // Load 4 i32 values
+        let i32_vec = vld1q_s32(input[offset..].as_ptr());
+
+        // Convert to f32
+        let f32_vec = vcvtq_f32_s32(i32_vec);
+
+        // Scale
+        let scaled = vmulq_f32(f32_vec, scale_vec);
+
+        // Apply GELU
+        let result = gelu_approx_neon(scaled);
+
+        // Store
+        vst1q_f32(output[offset..].as_mut_ptr(), result);
+    }
+
+    // Handle remainder
+    for i in (chunks * 4)..input.len() {
+        let x_f32 = (input[i] as f32) * scale;
+        output[i] = gelu_approx(x_f32);
+    }
+}
+
+/// SIMD quantize f32 to i8 using NEON.
+#[cfg(all(feature = "simd", target_arch = "aarch64"))]
+unsafe fn quantize_f32_to_i8_neon(input: &[f32], inv_scale: f32, output: &mut [i8]) {
+    use core::arch::aarch64::*;
+
+    let inv_scale_vec = vdupq_n_f32(inv_scale);
+    let min_val = vdupq_n_f32(-128.0);
+    let max_val = vdupq_n_f32(127.0);
+    let chunks = input.len() / 4;
+
+    for i in 0..chunks {
+        let offset = i * 4;
+
+        // Load 4 f32 values
+        let f32_vec = vld1q_f32(input[offset..].as_ptr());
+
+        // Scale
+        let scaled = vmulq_f32(f32_vec, inv_scale_vec);
+
+        // Round to nearest
+        let rounded = vrndnq_f32(scaled);
+
+        // Clamp to [-128, 127]
+        let clamped = vminq_f32(vmaxq_f32(rounded, min_val), max_val);
+
+        // Convert to i32
+        let i32_vec = vcvtq_s32_f32(clamped);
+
+        // Narrow to i16 then i8
+        let i16_vec = vmovn_s32(i32_vec);
+        let i16_vec_q = vcombine_s16(i16_vec, i16_vec);
+        let i8_vec = vmovn_s16(i16_vec_q);
+
+        // Store only 4 bytes
+        for j in 0..4 {
+            output[offset + j] = vget_lane_s8(i8_vec, j as i32) as i8;
+        }
+    }
+
+    // Handle remainder
+    for i in (chunks * 4)..input.len() {
+        let q = (input[i] * inv_scale).round();
+        output[i] = q.clamp(-128.0, 127.0) as i8;
+    }
+}
+
 /// ReLU activation.
 #[inline]
 pub fn relu(x: f32) -> f32 {
@@ -181,6 +303,16 @@ pub fn apply_activation_i32_to_f32(
                 // SAFETY: target_feature check ensures AVX2 is available
                 unsafe {
                     apply_gelu_simd(input, scale, output);
+                }
+                return;
+            }
+
+            // NEON path for aarch64
+            #[cfg(all(feature = "simd", target_arch = "aarch64"))]
+            {
+                // SAFETY: NEON is always available on aarch64
+                unsafe {
+                    apply_gelu_neon(input, scale, output);
                 }
                 return;
             }
@@ -373,7 +505,7 @@ fn compute_activation_scale(values: &[f32]) -> f32 {
 
 /// Quantize f32 to i8.
 ///
-/// Uses SIMD when available for 8× speedup.
+/// Uses SIMD when available for 4-8× speedup.
 #[inline]
 fn quantize_f32_to_i8(input: &[f32], scale: f32, output: &mut [i8]) {
     let inv_scale = 1.0 / scale;
@@ -384,6 +516,16 @@ fn quantize_f32_to_i8(input: &[f32], scale: f32, output: &mut [i8]) {
         // SAFETY: target_feature check ensures AVX2 is available
         unsafe {
             quantize_f32_to_i8_simd(input, inv_scale, output);
+        }
+        return;
+    }
+
+    // NEON path for aarch64
+    #[cfg(all(feature = "simd", target_arch = "aarch64"))]
+    {
+        // SAFETY: NEON is always available on aarch64
+        unsafe {
+            quantize_f32_to_i8_neon(input, inv_scale, output);
         }
         return;
     }
