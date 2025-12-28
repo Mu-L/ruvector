@@ -538,6 +538,48 @@ When you use Claude Code (or any AI coding assistant), it starts fresh every ses
 
 Think of it as giving your AI assistant a memory and intuition about your codebase.
 
+#### How It Works
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│  Claude Code    │────▶│  RuVector Hooks  │────▶│   Intelligence  │
+│  (PreToolUse)   │     │   (pre-edit)     │     │      Layer      │
+└─────────────────┘     └──────────────────┘     └─────────────────┘
+                                                         │
+         ┌───────────────────────────────────────────────┘
+         ▼
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│   Q-Learning    │     │  Vector Memory   │     │  Swarm Graph    │
+│   α=0.1 γ=0.95  │     │  64-dim embed    │     │  Coordination   │
+└─────────────────┘     └──────────────────┘     └─────────────────┘
+```
+
+The hooks integrate with Claude Code's event system:
+- **PreToolUse** → Provides guidance before edits (agent routing, related files)
+- **PostToolUse** → Records outcomes for learning (success/failure, patterns)
+- **SessionStart/Stop** → Manages session state and metrics export
+
+#### Technical Specifications
+
+| Component | Implementation | Details |
+|-----------|----------------|---------|
+| **Q-Learning** | Temporal Difference | α=0.1, γ=0.95, ε=0.1 (ε-greedy exploration) |
+| **Embeddings** | Hash-based vectors | 64 dimensions, normalized, cosine similarity |
+| **LRU Cache** | `lru` crate | 1000 entries, ~10x faster Q-value lookups |
+| **Compression** | `flate2` gzip | 70-83% storage reduction, fast compression |
+| **Storage** | JSON / PostgreSQL | Auto-fallback, 5000 memory entry limit |
+| **Cross-platform** | Rust + TypeScript | Windows (USERPROFILE), Unix (HOME) |
+
+#### Performance
+
+| Metric | Value |
+|--------|-------|
+| Q-value lookup (cached) | <1µs |
+| Q-value lookup (uncached) | ~50µs |
+| Memory search (1000 entries) | <5ms |
+| Storage compression ratio | 70-83% |
+| Session start overhead | <10ms |
+
 | Crate/Package | Description | Status |
 |---------------|-------------|--------|
 | [ruvector-cli hooks](./crates/ruvector-cli) | Rust CLI with 29 hooks commands | [![crates.io](https://img.shields.io/crates/v/ruvector-cli.svg)](https://crates.io/crates/ruvector-cli) |
@@ -558,15 +600,28 @@ npx @ruvector/cli hooks install
 
 #### Core Capabilities
 
-| Feature | Description |
-|---------|-------------|
-| **Q-Learning Routing** | Routes tasks to best agent with learned confidence scores |
-| **Semantic Memory** | Vector-based memory with 64-dim embeddings for context retrieval |
-| **Error Learning** | Records error patterns and suggests fixes (Rust E0308, TS2322, etc.) |
-| **File Sequences** | Predicts next files to edit based on historical patterns |
-| **Swarm Coordination** | Registers agents, tracks coordination edges, optimizes task distribution |
-| **LRU Cache** | 1000-entry cache for ~10x faster Q-value lookups |
-| **Gzip Compression** | 70-83% storage savings with automatic compression |
+| Feature | Description | Technical Details |
+|---------|-------------|-------------------|
+| **Q-Learning Routing** | Routes tasks to best agent with learned confidence scores | TD learning with α=0.1, γ=0.95, ε-greedy exploration |
+| **Semantic Memory** | Vector-based memory with embeddings for context retrieval | 64-dim hash embeddings, cosine similarity, top-k search |
+| **Error Learning** | Records error patterns and suggests fixes | Pattern matching for E0308, E0433, TS2322, etc. |
+| **File Sequences** | Predicts next files to edit based on historical patterns | Markov chain transitions, frequency-weighted suggestions |
+| **Swarm Coordination** | Registers agents, tracks coordination edges, optimizes | Graph-based topology, weighted edges, task assignment |
+| **LRU Cache** | 1000-entry cache for faster Q-value lookups | ~10x speedup, automatic eviction, RefCell for interior mutability |
+| **Gzip Compression** | Storage savings with automatic compression | flate2 fast mode, 70-83% reduction, transparent load/save |
+| **Batch Saves** | Dirty flag tracking to reduce disk I/O | Only writes when data changes, force_save() override |
+| **Shell Completions** | Tab completion for all commands | bash, zsh, fish, PowerShell support |
+
+#### Supported Error Codes
+
+The intelligence layer has built-in knowledge for common error patterns:
+
+| Language | Error Codes | Auto-Suggested Fixes |
+|----------|-------------|---------------------|
+| **Rust** | E0308, E0433, E0425, E0277, E0382 | Type mismatches, missing imports, borrow checker |
+| **TypeScript** | TS2322, TS2339, TS2345, TS7006 | Type assignments, property access, argument types |
+| **Python** | ImportError, AttributeError, TypeError | Module imports, attribute access, type errors |
+| **Go** | undefined, cannot use, not enough arguments | Variable scope, type conversion, function calls |
 
 #### Commands Reference
 
