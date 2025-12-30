@@ -5,6 +5,7 @@ edition = "2021"
 authors = ["RuVector Contributors"]
 description = "Minimal WASM DAG library for browser and embedded systems"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/ruvnet/ruvector"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
