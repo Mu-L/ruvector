@@ -3,525 +3,667 @@
 //! Tests for bio-inspired neural components:
 //! - HDC (Hyperdimensional Computing)
 //! - BTSP (Behavioral Time-Scale Plasticity)
-//! - Spiking Neural Networks
-//! - Neuromorphic processing primitives
+//! - WTA (Winner-Take-All)
+//! - Global Workspace
 
 #[cfg(test)]
 mod tests {
-    use wasm_bindgen_test::*;
-    use super::super::common::*;
-
-    wasm_bindgen_test_configure!(run_in_browser);
+    use ruvector_nervous_system_wasm::{
+        BTSPAssociativeMemory, BTSPLayer, BTSPSynapse, GlobalWorkspace, HdcMemory, Hypervector,
+        KWTALayer, WTALayer, WorkspaceItem,
+    };
 
     // ========================================================================
     // HDC (Hyperdimensional Computing) Tests
     // ========================================================================
 
-    #[wasm_bindgen_test]
-    fn test_hdc_vector_encoding() {
-        // Test hypervector encoding
-        let dim = 10000; // HDC typically uses very high dimensions
-
-        // TODO: When HDC is implemented:
-        // let encoder = HDCEncoder::new(dim);
-        //
-        // // Encode a symbol
-        // let hv_a = encoder.encode_symbol("A");
-        // let hv_b = encoder.encode_symbol("B");
-        //
-        // // Should be orthogonal (low similarity)
-        // let similarity = cosine_similarity(&hv_a, &hv_b);
-        // assert!(similarity.abs() < 0.1, "Random HVs should be near-orthogonal");
-        //
-        // // Same symbol should produce same vector
-        // let hv_a2 = encoder.encode_symbol("A");
-        // assert_vectors_approx_eq(&hv_a, &hv_a2, 1e-6);
-
-        assert!(dim >= 1000);
+    #[test]
+    fn test_hdc_vector_creation() {
+        let hv = Hypervector::new();
+        assert_eq!(hv.dimension(), 10_000);
+        assert_eq!(hv.popcount(), 0); // Zero vector
     }
 
-    #[wasm_bindgen_test]
-    fn test_hdc_bundling() {
-        // Test bundling (element-wise addition) operation
-        let dim = 10000;
+    #[test]
+    fn test_hdc_random_vector() {
+        let hv = Hypervector::random();
+        assert_eq!(hv.dimension(), 10_000);
 
-        // TODO: Test bundling
-        // let encoder = HDCEncoder::new(dim);
-        //
-        // let hv_a = encoder.encode_symbol("A");
-        // let hv_b = encoder.encode_symbol("B");
-        // let hv_c = encoder.encode_symbol("C");
-        //
-        // // Bundle A, B, C
-        // let bundled = HDC::bundle(&[&hv_a, &hv_b, &hv_c]);
-        //
-        // // Bundled vector should be similar to all components
-        // assert!(cosine_similarity(&bundled, &hv_a) > 0.3);
-        // assert!(cosine_similarity(&bundled, &hv_b) > 0.3);
-        // assert!(cosine_similarity(&bundled, &hv_c) > 0.3);
-
-        assert!(dim > 0);
+        // Random vector should have ~50% bits set (±10%)
+        let popcount = hv.popcount();
+        assert!(
+            popcount > 4000 && popcount < 6000,
+            "Random vector should have ~50% bits set, got {}",
+            popcount
+        );
     }
 
-    #[wasm_bindgen_test]
+    #[test]
+    fn test_hdc_seeded_vector() {
+        let hv1 = Hypervector::from_seed(42);
+        let hv2 = Hypervector::from_seed(42);
+        let hv3 = Hypervector::from_seed(123);
+
+        // Same seed = same vector
+        assert!(
+            hv1.similarity(&hv2) > 0.99,
+            "Same seed should produce identical vectors"
+        );
+
+        // Different seed = different vector
+        assert!(
+            hv1.similarity(&hv3).abs() < 0.1,
+            "Different seeds should produce orthogonal vectors"
+        );
+    }
+
+    #[test]
     fn test_hdc_binding() {
-        // Test binding (element-wise XOR or multiplication) operation
-        let dim = 10000;
+        let hv_a = Hypervector::random();
+        let hv_b = Hypervector::random();
 
-        // TODO: Test binding
-        // let encoder = HDCEncoder::new(dim);
-        //
-        // let hv_a = encoder.encode_symbol("A");
-        // let hv_b = encoder.encode_symbol("B");
-        //
-        // // Bind A with B
-        // let bound = HDC::bind(&hv_a, &hv_b);
-        //
-        // // Bound vector should be orthogonal to both components
-        // assert!(cosine_similarity(&bound, &hv_a).abs() < 0.1);
-        // assert!(cosine_similarity(&bound, &hv_b).abs() < 0.1);
-        //
-        // // Unbinding should recover original
-        // let recovered = HDC::bind(&bound, &hv_b); // bind is its own inverse
-        // assert!(cosine_similarity(&recovered, &hv_a) > 0.9);
+        // Bind A and B
+        let bound = hv_a.bind(&hv_b);
 
-        assert!(dim > 0);
+        // Bound vector should be orthogonal to both components
+        assert!(
+            hv_a.similarity(&bound).abs() < 0.1,
+            "Bound should be orthogonal to A"
+        );
+        assert!(
+            hv_b.similarity(&bound).abs() < 0.1,
+            "Bound should be orthogonal to B"
+        );
+
+        // Binding is self-inverse: (A XOR B) XOR B = A
+        let recovered = bound.bind(&hv_b);
+        assert!(
+            recovered.similarity(&hv_a) > 0.99,
+            "XOR binding should be self-inverse"
+        );
     }
 
-    #[wasm_bindgen_test]
-    fn test_hdc_permutation() {
-        // Test permutation for sequence encoding
-        let dim = 10000;
+    #[test]
+    fn test_hdc_similarity() {
+        let hv1 = Hypervector::random();
+        let hv2 = Hypervector::random();
 
-        // TODO: Test permutation
-        // let encoder = HDCEncoder::new(dim);
-        //
-        // let hv_a = encoder.encode_symbol("A");
-        //
-        // // Permute by position 1, 2, 3
-        // let hv_a_pos1 = HDC::permute(&hv_a, 1);
-        // let hv_a_pos2 = HDC::permute(&hv_a, 2);
-        //
-        // // Permuted vectors should be orthogonal to original
-        // assert!(cosine_similarity(&hv_a, &hv_a_pos1).abs() < 0.1);
-        //
-        // // Inverse permutation should recover original
-        // let recovered = HDC::permute_inverse(&hv_a_pos1, 1);
-        // assert_vectors_approx_eq(&hv_a, &recovered, 1e-6);
+        // Self-similarity should be 1.0
+        assert!(
+            (hv1.similarity(&hv1) - 1.0).abs() < 0.001,
+            "Self-similarity should be 1.0"
+        );
 
-        assert!(dim > 0);
+        // Random vectors should be near-orthogonal
+        let sim = hv1.similarity(&hv2);
+        assert!(
+            sim.abs() < 0.1,
+            "Random vectors should be near-orthogonal, got {}",
+            sim
+        );
     }
 
-    #[wasm_bindgen_test]
-    fn test_hdc_associative_memory() {
-        // Test HDC as associative memory
-        let dim = 10000;
+    #[test]
+    fn test_hdc_hamming_distance() {
+        let hv1 = Hypervector::new();
+        let hv2 = Hypervector::random();
 
-        // TODO: Test associative memory
-        // let mut memory = HDCAssociativeMemory::new(dim);
-        //
-        // // Store key-value pairs
-        // let key1 = random_vector(dim);
-        // let value1 = random_vector(dim);
-        // memory.store(&key1, &value1);
-        //
-        // let key2 = random_vector(dim);
-        // let value2 = random_vector(dim);
-        // memory.store(&key2, &value2);
-        //
-        // // Retrieve by key
-        // let retrieved1 = memory.retrieve(&key1);
-        // assert!(cosine_similarity(&retrieved1, &value1) > 0.8);
-        //
-        // // Noisy key should still retrieve correct value
-        // let noisy_key1: Vec<f32> = key1.iter()
-        //     .map(|x| x + (rand::random::<f32>() - 0.5) * 0.1)
-        //     .collect();
-        // let retrieved_noisy = memory.retrieve(&noisy_key1);
-        // assert!(cosine_similarity(&retrieved_noisy, &value1) > 0.6);
+        // Distance from zero to random should be ~5000 (half the bits)
+        let dist = hv1.hamming_distance(&hv2);
+        assert!(
+            dist > 4000 && dist < 6000,
+            "Hamming distance to random should be ~5000, got {}",
+            dist
+        );
 
-        assert!(dim > 0);
+        // Distance to self should be 0
+        assert_eq!(hv2.hamming_distance(&hv2), 0);
     }
 
-    // ========================================================================
-    // BTSP (Behavioral Time-Scale Plasticity) Tests
-    // ========================================================================
+    #[test]
+    fn test_hdc_bundle_3() {
+        let hv_a = Hypervector::random();
+        let hv_b = Hypervector::random();
+        let hv_c = Hypervector::random();
 
-    #[wasm_bindgen_test]
-    fn test_btsp_basic() {
-        // Test BTSP learning rule
-        let num_inputs = 100;
-        let num_outputs = 10;
+        let bundled = Hypervector::bundle_3(&hv_a, &hv_b, &hv_c);
 
-        // TODO: When BTSP is implemented:
-        // let mut btsp = BTSPNetwork::new(num_inputs, num_outputs);
-        //
-        // // Present input pattern
-        // let input = random_vector(num_inputs);
-        // let output = btsp.forward(&input);
-        //
-        // // Apply eligibility trace
-        // btsp.update_eligibility(&input);
-        //
-        // // Apply behavioral signal (reward/plateau potential)
-        // btsp.apply_behavioral_signal(1.0);
-        //
-        // // Weights should be modified
-        // let output_after = btsp.forward(&input);
-        //
-        // // Output should change due to learning
-        // let diff: f32 = output.iter().zip(output_after.iter())
-        //     .map(|(a, b)| (a - b).abs())
-        //     .sum();
-        // assert!(diff > 0.01, "BTSP should modify network");
-
-        assert!(num_inputs > 0);
+        // Bundled vector should be similar to all components
+        assert!(
+            hv_a.similarity(&bundled) > 0.3,
+            "Bundled should be similar to A"
+        );
+        assert!(
+            hv_b.similarity(&bundled) > 0.3,
+            "Bundled should be similar to B"
+        );
+        assert!(
+            hv_c.similarity(&bundled) > 0.3,
+            "Bundled should be similar to C"
+        );
     }
 
-    #[wasm_bindgen_test]
-    fn test_btsp_eligibility_trace() {
-        // Test eligibility trace dynamics
-        let num_inputs = 50;
+    #[test]
+    fn test_hdc_serialization() {
+        let hv = Hypervector::random();
+        let bytes = hv.to_bytes();
 
-        // TODO: Test eligibility trace
-        // let mut btsp = BTSPNetwork::new(num_inputs, 10);
-        //
-        // // Present input
-        // let input = random_vector(num_inputs);
-        // btsp.update_eligibility(&input);
-        //
-        // let trace_t0 = btsp.get_eligibility_trace();
-        //
-        // // Trace should decay over time
-        // btsp.step_time(10);
-        // let trace_t10 = btsp.get_eligibility_trace();
-        //
-        // let trace_t0_norm: f32 = trace_t0.iter().map(|x| x * x).sum();
-        // let trace_t10_norm: f32 = trace_t10.iter().map(|x| x * x).sum();
-        //
-        // assert!(trace_t10_norm < trace_t0_norm, "Eligibility should decay");
+        // Should be 157 * 8 = 1256 bytes
+        assert_eq!(bytes.length(), 157 * 8);
 
-        assert!(num_inputs > 0);
-    }
+        // Round-trip
+        let bytes_vec: Vec<u8> = bytes.to_vec();
+        let restored = Hypervector::from_bytes(&bytes_vec).expect("Should deserialize");
 
-    #[wasm_bindgen_test]
-    fn test_btsp_one_shot_learning() {
-        // BTSP should enable one-shot learning with plateau potential
-        let num_inputs = 100;
-        let num_outputs = 10;
-
-        // TODO: Test one-shot learning
-        // let mut btsp = BTSPNetwork::new(num_inputs, num_outputs);
-        //
-        // // Input pattern
-        // let input = random_vector(num_inputs);
-        //
-        // // Target activation
-        // let target_output = 5; // Activate neuron 5
-        //
-        // // One-shot learning: present input + apply plateau to target
-        // btsp.forward(&input);
-        // btsp.update_eligibility(&input);
-        // btsp.apply_plateau_potential(target_output, 1.0);
-        //
-        // // Clear state
-        // btsp.reset_state();
-        //
-        // // Re-present input
-        // let output = btsp.forward(&input);
-        //
-        // // Target neuron should be more active
-        // let target_activity = output[target_output];
-        // let other_max = output.iter()
-        //     .enumerate()
-        //     .filter(|(i, _)| *i != target_output)
-        //     .map(|(_, v)| *v)
-        //     .fold(f32::NEG_INFINITY, f32::max);
-        //
-        // assert!(target_activity > other_max, "Target should be most active after one-shot learning");
-
-        assert!(num_outputs > 0);
+        assert!(
+            hv.similarity(&restored) > 0.99,
+            "Round-trip should preserve vector"
+        );
     }
 
     // ========================================================================
-    // Spiking Neural Network Tests
+    // HDC Memory Tests
     // ========================================================================
 
-    #[wasm_bindgen_test]
-    fn test_spiking_neuron_lif() {
-        // Test Leaky Integrate-and-Fire neuron
-        let threshold = 1.0;
-        let tau_m = 10.0; // Membrane time constant
-
-        // TODO: When SNN is implemented:
-        // let mut lif = LIFNeuron::new(threshold, tau_m);
-        //
-        // // Sub-threshold input should not spike
-        // lif.inject_current(0.5);
-        // for _ in 0..10 {
-        //     let spike = lif.step(1.0);
-        //     assert!(!spike, "Should not spike below threshold");
-        // }
-        //
-        // // Super-threshold input should spike
-        // lif.reset();
-        // lif.inject_current(2.0);
-        // let mut spiked = false;
-        // for _ in 0..20 {
-        //     if lif.step(1.0) {
-        //         spiked = true;
-        //         break;
-        //     }
-        // }
-        // assert!(spiked, "Should spike above threshold");
-
-        assert!(threshold > 0.0);
+    #[test]
+    fn test_hdc_memory_creation() {
+        let memory = HdcMemory::new();
+        assert_eq!(memory.size(), 0);
     }
 
-    #[wasm_bindgen_test]
-    fn test_spiking_network_propagation() {
-        // Test spike propagation through network
-        let num_layers = 3;
-        let neurons_per_layer = 10;
+    #[test]
+    fn test_hdc_memory_store_retrieve() {
+        let mut memory = HdcMemory::new();
 
-        // TODO: Test spike propagation
-        // let mut network = SpikingNetwork::new(&[
-        //     neurons_per_layer,
-        //     neurons_per_layer,
-        //     neurons_per_layer,
-        // ]);
-        //
-        // // Inject strong current into first layer
-        // network.inject_current(0, vec![2.0; neurons_per_layer]);
-        //
-        // // Run for several timesteps
-        // let mut layer_spikes = vec![vec![]; num_layers];
-        // for t in 0..50 {
-        //     let spikes = network.step(1.0);
-        //     for (layer, layer_spikes_t) in spikes.iter().enumerate() {
-        //         if layer_spikes_t.iter().any(|&s| s) {
-        //             layer_spikes[layer].push(t);
-        //         }
-        //     }
-        // }
-        //
-        // // Spikes should propagate through layers
-        // assert!(!layer_spikes[0].is_empty(), "First layer should spike");
-        // assert!(!layer_spikes[2].is_empty(), "Output layer should receive spikes");
-        //
-        // // Output layer should spike after input layer
-        // if !layer_spikes[2].is_empty() {
-        //     assert!(layer_spikes[2][0] > layer_spikes[0][0],
-        //         "Causality: output should spike after input");
-        // }
+        let apple = Hypervector::random();
+        let orange = Hypervector::random();
 
-        assert!(num_layers > 0);
+        memory.store("apple", apple.clone());
+        memory.store("orange", orange.clone());
+
+        assert_eq!(memory.size(), 2);
+        assert!(memory.has("apple"));
+        assert!(memory.has("orange"));
+        assert!(!memory.has("banana"));
+
+        // Retrieve by label
+        let retrieved = memory.get("apple").expect("Should find apple");
+        assert!(
+            retrieved.similarity(&apple) > 0.99,
+            "Retrieved should match stored"
+        );
     }
 
-    #[wasm_bindgen_test]
-    fn test_stdp_learning() {
-        // Test Spike-Timing-Dependent Plasticity
-        let a_plus = 0.01;  // Potentiation coefficient
-        let a_minus = 0.01; // Depression coefficient
-        let tau = 20.0;     // Time constant
+    #[test]
+    fn test_hdc_memory_similarity_search() {
+        let mut memory = HdcMemory::new();
 
-        // TODO: Test STDP
-        // let mut stdp = STDPRule::new(a_plus, a_minus, tau);
-        //
-        // let initial_weight = 0.5;
-        //
-        // // Pre before post (potentiation)
-        // let pre_spike_time = 0.0;
-        // let post_spike_time = 10.0;
-        // let delta_w = stdp.compute_weight_change(pre_spike_time, post_spike_time);
-        // assert!(delta_w > 0.0, "Pre-before-post should potentiate");
-        //
-        // // Post before pre (depression)
-        // let pre_spike_time = 10.0;
-        // let post_spike_time = 0.0;
-        // let delta_w = stdp.compute_weight_change(pre_spike_time, post_spike_time);
-        // assert!(delta_w < 0.0, "Post-before-pre should depress");
+        // Store several vectors
+        let apple = Hypervector::from_seed(1);
+        let banana = Hypervector::from_seed(2);
+        let cherry = Hypervector::from_seed(3);
 
-        assert!(tau > 0.0);
+        memory.store("apple", apple.clone());
+        memory.store("banana", banana.clone());
+        memory.store("cherry", cherry.clone());
+
+        // Query with apple - should find apple with high similarity
+        let results = memory.retrieve(&apple, 0.9);
+        assert!(!results.is_null(), "Should return results");
     }
 
-    #[wasm_bindgen_test]
-    fn test_spiking_temporal_coding() {
-        // Test rate vs temporal coding
-        let num_neurons = 10;
+    #[test]
+    fn test_hdc_memory_clear() {
+        let mut memory = HdcMemory::new();
 
-        // TODO: Test temporal coding
-        // let mut network = SpikingNetwork::temporal_coding(num_neurons);
-        //
-        // // Encode value as spike time (earlier = higher value)
-        // let values: Vec<f32> = (0..num_neurons).map(|i| (i as f32) / (num_neurons as f32)).collect();
-        // network.encode_temporal(&values);
-        //
-        // // Run and record spike times
-        // let mut spike_times = vec![f32::INFINITY; num_neurons];
-        // for t in 0..100 {
-        //     let spikes = network.step(1.0);
-        //     for (i, &spiked) in spikes.iter().enumerate() {
-        //         if spiked && spike_times[i] == f32::INFINITY {
-        //             spike_times[i] = t as f32;
-        //         }
-        //     }
-        // }
-        //
-        // // Higher values should spike earlier
-        // for i in 1..num_neurons {
-        //     if spike_times[i] < f32::INFINITY && spike_times[i-1] < f32::INFINITY {
-        //         assert!(spike_times[i] < spike_times[i-1],
-        //             "Higher value should spike earlier");
-        //     }
-        // }
+        memory.store("a", Hypervector::random());
+        memory.store("b", Hypervector::random());
+        assert_eq!(memory.size(), 2);
 
-        assert!(num_neurons > 0);
+        memory.clear();
+        assert_eq!(memory.size(), 0);
     }
 
     // ========================================================================
-    // Neuromorphic Processing Tests
+    // BTSP Tests
     // ========================================================================
 
-    #[wasm_bindgen_test]
-    fn test_neuromorphic_attention() {
-        // Test neuromorphic attention mechanism
-        let dim = 64;
-        let num_heads = 4;
-
-        // TODO: Test neuromorphic attention
-        // let attention = NeuromorphicAttention::new(dim, num_heads);
-        //
-        // let query = random_vector(dim);
-        // let keys: Vec<Vec<f32>> = (0..10).map(|_| random_vector(dim)).collect();
-        // let values: Vec<Vec<f32>> = (0..10).map(|_| random_vector(dim)).collect();
-        //
-        // let output = attention.forward(&query, &keys, &values);
-        //
-        // assert_eq!(output.len(), dim);
-        // assert_finite(&output);
-
-        assert!(dim > 0);
+    #[test]
+    fn test_btsp_synapse_creation() {
+        let synapse = BTSPSynapse::new(0.5, 2000.0).expect("Should create synapse");
+        assert!((synapse.weight() - 0.5).abs() < 0.001);
+        assert!(synapse.eligibility_trace() < 0.001);
     }
 
-    #[wasm_bindgen_test]
-    fn test_reservoir_computing() {
-        // Test Echo State Network / Reservoir Computing
-        let input_dim = 10;
-        let reservoir_size = 100;
-        let output_dim = 5;
+    #[test]
+    fn test_btsp_synapse_invalid_weight() {
+        let result = BTSPSynapse::new(1.5, 2000.0);
+        assert!(result.is_err(), "Weight > 1.0 should fail");
 
-        // TODO: Test reservoir
-        // let reservoir = ReservoirComputer::new(input_dim, reservoir_size, output_dim);
-        //
-        // // Run sequence through reservoir
-        // let sequence: Vec<Vec<f32>> = (0..50).map(|_| random_vector(input_dim)).collect();
-        //
-        // for input in &sequence {
-        //     reservoir.step(input);
-        // }
-        //
-        // // Get reservoir state
-        // let state = reservoir.get_state();
-        // assert_eq!(state.len(), reservoir_size);
-        // assert_finite(&state);
-        //
-        // // Train readout
-        // let targets: Vec<Vec<f32>> = (0..50).map(|_| random_vector(output_dim)).collect();
-        // reservoir.train_readout(&targets);
-        //
-        // // Get output
-        // let output = reservoir.predict();
-        // assert_eq!(output.len(), output_dim);
-
-        assert!(reservoir_size > 0);
+        let result = BTSPSynapse::new(-0.1, 2000.0);
+        assert!(result.is_err(), "Weight < 0.0 should fail");
     }
 
-    // ========================================================================
-    // Integration Tests
-    // ========================================================================
-
-    #[wasm_bindgen_test]
-    fn test_hdc_snn_integration() {
-        // Test using HDC with SNN for efficient inference
-        let hd_dim = 1000;
-        let num_classes = 10;
-
-        // TODO: Test HDC + SNN integration
-        // let encoder = HDCEncoder::new(hd_dim);
-        // let classifier = HDCClassifier::new(hd_dim, num_classes);
-        //
-        // // Convert to spiking
-        // let snn = classifier.to_spiking();
-        //
-        // // Encode and classify with SNN
-        // let input = random_vector(hd_dim);
-        // let encoded = encoder.encode(&input);
-        //
-        // let output = snn.forward(&encoded);
-        // assert_eq!(output.len(), num_classes);
-
-        assert!(num_classes > 0);
+    #[test]
+    fn test_btsp_synapse_forward() {
+        let synapse = BTSPSynapse::new(0.5, 2000.0).unwrap();
+        let output = synapse.forward(2.0);
+        assert!((output - 1.0).abs() < 0.001, "0.5 * 2.0 = 1.0");
     }
 
-    #[wasm_bindgen_test]
-    fn test_energy_efficiency() {
-        // Neuromorphic should be more energy efficient (fewer operations)
-        let dim = 64;
-        let seq_len = 100;
+    #[test]
+    fn test_btsp_synapse_update() {
+        let mut synapse = BTSPSynapse::new(0.3, 2000.0).unwrap();
 
-        // TODO: Compare operation counts
-        // let standard_attention = StandardAttention::new(dim);
-        // let neuromorphic_attention = NeuromorphicAttention::new(dim, 4);
-        //
-        // let queries = (0..seq_len).map(|_| random_vector(dim)).collect();
-        // let keys = (0..seq_len).map(|_| random_vector(dim)).collect();
-        //
-        // let standard_ops = standard_attention.count_operations(&queries, &keys);
-        // let neuro_ops = neuromorphic_attention.count_operations(&queries, &keys);
-        //
-        // // Neuromorphic should use fewer ops (event-driven)
-        // assert!(neuro_ops < standard_ops,
-        //     "Neuromorphic should be more efficient: {} vs {}", neuro_ops, standard_ops);
+        // Presynaptic activity accumulates eligibility
+        synapse.update(true, false, 1.0);
+        assert!(
+            synapse.eligibility_trace() > 0.0,
+            "Trace should accumulate with presynaptic activity"
+        );
 
-        assert!(seq_len > 0);
+        // Plateau signal with trace should modify weight
+        let initial_weight = synapse.weight();
+        synapse.update(false, true, 1.0);
+        assert!(
+            (synapse.weight() - initial_weight).abs() > 0.001,
+            "Weight should change with plateau signal"
+        );
+    }
+
+    #[test]
+    fn test_btsp_layer_creation() {
+        let layer = BTSPLayer::new(100, 2000.0);
+        assert_eq!(layer.size(), 100);
+    }
+
+    #[test]
+    fn test_btsp_layer_forward() {
+        let layer = BTSPLayer::new(10, 2000.0);
+        let input: Vec<f32> = vec![1.0; 10];
+
+        let output = layer.forward(&input).expect("Forward should succeed");
+        assert!(output.is_finite(), "Output should be finite");
+    }
+
+    #[test]
+    fn test_btsp_layer_one_shot_learning() {
+        let mut layer = BTSPLayer::new(10, 2000.0);
+        let pattern: Vec<f32> = vec![0.5; 10];
+        let target = 5.0;
+
+        // One-shot learning
+        layer
+            .one_shot_associate(&pattern, target)
+            .expect("Should succeed");
+
+        // After learning, output should be closer to target
+        let output = layer.forward(&pattern).expect("Forward should succeed");
+        assert!(
+            (output - target).abs() < 1.0,
+            "Output {} should be close to target {}",
+            output,
+            target
+        );
+    }
+
+    #[test]
+    fn test_btsp_layer_size_mismatch() {
+        let layer = BTSPLayer::new(10, 2000.0);
+        let wrong_size_input: Vec<f32> = vec![1.0; 5];
+
+        let result = layer.forward(&wrong_size_input);
+        assert!(result.is_err(), "Should fail with wrong input size");
+    }
+
+    #[test]
+    fn test_btsp_layer_reset() {
+        let mut layer = BTSPLayer::new(10, 2000.0);
+        let pattern: Vec<f32> = vec![0.5; 10];
+
+        layer.one_shot_associate(&pattern, 10.0).unwrap();
+        layer.reset();
+
+        // After reset, weights should be small again
+        let weights = layer.get_weights();
+        let max_weight = weights.to_vec().iter().cloned().fold(0.0f32, f32::max);
+        assert!(max_weight < 0.2, "Weights should be reset to small values");
     }
 
     // ========================================================================
-    // WASM-Specific Tests
+    // BTSP Associative Memory Tests
     // ========================================================================
 
-    #[wasm_bindgen_test]
-    fn test_nervous_system_wasm_initialization() {
-        // Test WASM module initialization
-        // TODO: Verify init
-        // ruvector_nervous_system_wasm::init();
-        // assert!(ruvector_nervous_system_wasm::version().len() > 0);
-
-        assert!(true);
+    #[test]
+    fn test_btsp_associative_memory_creation() {
+        let memory = BTSPAssociativeMemory::new(64, 32);
+        let dims = memory.dimensions();
+        assert!(!dims.is_null());
     }
 
-    #[wasm_bindgen_test]
-    fn test_nervous_system_serialization() {
-        // Test serialization for WASM interop
-        let num_neurons = 10;
+    #[test]
+    fn test_btsp_associative_memory_store_retrieve() {
+        let mut memory = BTSPAssociativeMemory::new(10, 5);
 
-        // TODO: Test serialization
-        // let network = SpikingNetwork::new(&[num_neurons, num_neurons]);
-        //
-        // // Serialize to JSON
-        // let json = network.to_json();
-        // assert!(json.len() > 0);
-        //
-        // // Deserialize
-        // let restored = SpikingNetwork::from_json(&json);
-        //
-        // // Should produce same output
-        // let input = random_vector(num_neurons);
-        // let output1 = network.forward(&input);
-        // let output2 = restored.forward(&input);
-        // assert_vectors_approx_eq(&output1, &output2, 1e-6);
+        let key: Vec<f32> = vec![1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0];
+        let value: Vec<f32> = vec![0.5, 0.5, 0.5, 0.5, 0.5];
 
-        assert!(num_neurons > 0);
+        memory.store_one_shot(&key, &value).expect("Should store");
+
+        let retrieved = memory.retrieve(&key).expect("Should retrieve");
+        let retrieved_vec: Vec<f32> = retrieved.to_vec();
+
+        // Retrieved value should be close to stored value
+        let error: f32 = retrieved_vec
+            .iter()
+            .zip(value.iter())
+            .map(|(a, b)| (a - b).abs())
+            .sum();
+        assert!(
+            error < 1.0,
+            "Retrieved should be close to stored, error = {}",
+            error
+        );
+    }
+
+    // ========================================================================
+    // WTA Tests
+    // ========================================================================
+
+    #[test]
+    fn test_wta_layer_creation() {
+        let wta = WTALayer::new(100, 0.5, 0.8).expect("Should create");
+        assert_eq!(wta.size(), 100);
+    }
+
+    #[test]
+    fn test_wta_layer_invalid_size() {
+        let result = WTALayer::new(0, 0.5, 0.8);
+        assert!(result.is_err(), "Size 0 should fail");
+    }
+
+    #[test]
+    fn test_wta_competition_finds_winner() {
+        let mut wta = WTALayer::new(10, 0.1, 0.5).unwrap();
+
+        // Input with clear winner at index 5
+        let mut inputs = vec![0.2; 10];
+        inputs[5] = 0.9;
+
+        let winner = wta.compete(&inputs).expect("Should compute");
+        assert_eq!(winner, 5, "Index 5 should win");
+    }
+
+    #[test]
+    fn test_wta_no_winner_below_threshold() {
+        let mut wta = WTALayer::new(10, 0.8, 0.5).unwrap();
+
+        // All inputs below threshold
+        let inputs = vec![0.5; 10];
+
+        let winner = wta.compete(&inputs).expect("Should compute");
+        assert_eq!(winner, -1, "No winner when all below threshold");
+    }
+
+    #[test]
+    fn test_wta_soft_competition() {
+        let mut wta = WTALayer::new(5, 0.1, 0.5).unwrap();
+        let inputs = vec![0.1, 0.2, 0.5, 0.15, 0.05];
+
+        let activations = wta.compete_soft(&inputs).expect("Should compute");
+        let act_vec: Vec<f32> = activations.to_vec();
+
+        // Sum should be ~1.0 (softmax)
+        let sum: f32 = act_vec.iter().sum();
+        assert!(
+            (sum - 1.0).abs() < 0.01,
+            "Softmax should sum to 1.0, got {}",
+            sum
+        );
+
+        // Index 2 (highest input) should have highest activation
+        let max_idx = act_vec
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .map(|(i, _)| i)
+            .unwrap();
+        assert_eq!(max_idx, 2, "Highest input should have highest activation");
+    }
+
+    #[test]
+    fn test_wta_reset() {
+        let mut wta = WTALayer::new(5, 0.1, 0.5).unwrap();
+        let inputs = vec![0.5; 5];
+
+        wta.compete(&inputs).unwrap();
+        wta.reset();
+
+        let membranes = wta.get_membranes().to_vec();
+        assert!(
+            membranes.iter().all(|&m| m == 0.0),
+            "Membranes should be reset to 0"
+        );
+    }
+
+    // ========================================================================
+    // K-WTA Tests
+    // ========================================================================
+
+    #[test]
+    fn test_kwta_layer_creation() {
+        let kwta = KWTALayer::new(100, 10).expect("Should create");
+        assert_eq!(kwta.size(), 100);
+        assert_eq!(kwta.k(), 10);
+    }
+
+    #[test]
+    fn test_kwta_invalid_k() {
+        let result = KWTALayer::new(10, 0);
+        assert!(result.is_err(), "k=0 should fail");
+
+        let result = KWTALayer::new(10, 20);
+        assert!(result.is_err(), "k > size should fail");
+    }
+
+    #[test]
+    fn test_kwta_select_top_k() {
+        let kwta = KWTALayer::new(10, 3).unwrap();
+
+        // Clear ranking: indices 7, 2, 5 have highest values
+        let inputs = vec![0.1, 0.2, 0.9, 0.3, 0.4, 0.8, 0.15, 0.95, 0.25, 0.35];
+
+        let winners = kwta.select(&inputs).expect("Should select");
+        let winner_vec: Vec<u32> = winners.to_vec();
+
+        assert_eq!(winner_vec.len(), 3);
+        assert!(winner_vec.contains(&7)); // 0.95
+        assert!(winner_vec.contains(&2)); // 0.9
+        assert!(winner_vec.contains(&5)); // 0.8
+    }
+
+    #[test]
+    fn test_kwta_sparse_activations() {
+        let kwta = KWTALayer::new(10, 3).unwrap();
+        let inputs = vec![0.1, 0.2, 0.9, 0.3, 0.4, 0.8, 0.15, 0.95, 0.25, 0.35];
+
+        let sparse = kwta.sparse_activations(&inputs).expect("Should compute");
+        let sparse_vec: Vec<f32> = sparse.to_vec();
+
+        // Only 3 non-zero values
+        let non_zero_count = sparse_vec.iter().filter(|&&v| v > 0.0).count();
+        assert_eq!(non_zero_count, 3, "Should have exactly k non-zero values");
+
+        // Non-zero values should preserve original magnitudes
+        assert!((sparse_vec[7] - 0.95).abs() < 0.001);
+        assert!((sparse_vec[2] - 0.9).abs() < 0.001);
+        assert!((sparse_vec[5] - 0.8).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_kwta_with_threshold() {
+        let mut kwta = KWTALayer::new(10, 5).unwrap();
+        kwta.with_threshold(0.5);
+
+        // Only 3 values above threshold
+        let inputs = vec![0.1, 0.2, 0.9, 0.3, 0.4, 0.8, 0.15, 0.6, 0.25, 0.35];
+
+        let winners = kwta.select(&inputs).expect("Should select");
+        let winner_vec: Vec<u32> = winners.to_vec();
+
+        // Even though k=5, only 3 values are above threshold
+        assert_eq!(winner_vec.len(), 3);
+    }
+
+    // ========================================================================
+    // Global Workspace Tests
+    // ========================================================================
+
+    #[test]
+    fn test_workspace_creation() {
+        let workspace = GlobalWorkspace::new(7);
+        assert_eq!(workspace.capacity(), 7);
+        assert_eq!(workspace.len(), 0);
+        assert!(workspace.is_empty());
+    }
+
+    #[test]
+    fn test_workspace_item_creation() {
+        let content = vec![1.0, 2.0, 3.0];
+        let item = WorkspaceItem::new(&content, 0.8, 1, 1000);
+
+        assert!((item.salience() - 0.8).abs() < 0.001);
+        assert_eq!(item.source_module(), 1);
+        assert_eq!(item.timestamp(), 1000);
+    }
+
+    #[test]
+    fn test_workspace_broadcast() {
+        let mut workspace = GlobalWorkspace::new(3);
+
+        let item1 = WorkspaceItem::new(&[1.0], 0.5, 1, 100);
+        let item2 = WorkspaceItem::new(&[2.0], 0.7, 2, 200);
+
+        assert!(workspace.broadcast(item1));
+        assert!(workspace.broadcast(item2));
+        assert_eq!(workspace.len(), 2);
+    }
+
+    #[test]
+    fn test_workspace_reject_low_salience() {
+        let workspace = GlobalWorkspace::with_threshold(3, 0.5);
+
+        let low_salience_item = WorkspaceItem::new(&[1.0], 0.3, 1, 100);
+        let mut ws = workspace;
+        assert!(
+            !ws.broadcast(low_salience_item),
+            "Should reject low salience items"
+        );
+    }
+
+    #[test]
+    fn test_workspace_capacity_limit() {
+        let mut workspace = GlobalWorkspace::new(2);
+
+        let item1 = WorkspaceItem::new(&[1.0], 0.5, 1, 100);
+        let item2 = WorkspaceItem::new(&[2.0], 0.6, 2, 200);
+        let item3 = WorkspaceItem::new(&[3.0], 0.7, 3, 300);
+
+        workspace.broadcast(item1);
+        workspace.broadcast(item2);
+        assert!(workspace.is_full());
+
+        // Item3 (higher salience) should replace weakest
+        assert!(workspace.broadcast(item3));
+        assert_eq!(workspace.len(), 2);
+    }
+
+    #[test]
+    fn test_workspace_competition() {
+        let mut workspace = GlobalWorkspace::new(5);
+
+        let item1 = WorkspaceItem::new(&[1.0], 0.8, 1, 100);
+        let item2 = WorkspaceItem::new(&[2.0], 0.3, 2, 200);
+
+        workspace.broadcast(item1);
+        workspace.broadcast(item2);
+
+        // Compete should apply decay and potentially remove items
+        for _ in 0..10 {
+            workspace.compete();
+        }
+
+        // Low salience item may have been pruned
+        assert!(workspace.len() <= 2);
+    }
+
+    #[test]
+    fn test_workspace_most_salient() {
+        let mut workspace = GlobalWorkspace::new(5);
+
+        let item1 = WorkspaceItem::new(&[1.0], 0.3, 1, 100);
+        let item2 = WorkspaceItem::new(&[2.0], 0.9, 2, 200);
+        let item3 = WorkspaceItem::new(&[3.0], 0.5, 3, 300);
+
+        workspace.broadcast(item1);
+        workspace.broadcast(item2);
+        workspace.broadcast(item3);
+
+        let most = workspace.most_salient().expect("Should have most salient");
+        assert!(
+            most.salience() > 0.8,
+            "Most salient should be item2 with salience 0.9"
+        );
+    }
+
+    #[test]
+    fn test_workspace_average_salience() {
+        let mut workspace = GlobalWorkspace::new(5);
+
+        let item1 = WorkspaceItem::new(&[1.0], 0.4, 1, 100);
+        let item2 = WorkspaceItem::new(&[2.0], 0.6, 2, 200);
+
+        workspace.broadcast(item1);
+        workspace.broadcast(item2);
+
+        let avg = workspace.average_salience();
+        assert!(
+            (avg - 0.5).abs() < 0.1,
+            "Average salience should be ~0.5, got {}",
+            avg
+        );
+    }
+
+    #[test]
+    fn test_workspace_clear() {
+        let mut workspace = GlobalWorkspace::new(5);
+
+        workspace.broadcast(WorkspaceItem::new(&[1.0], 0.5, 1, 100));
+        workspace.broadcast(WorkspaceItem::new(&[2.0], 0.6, 2, 200));
+
+        workspace.clear();
+        assert!(workspace.is_empty());
+        assert_eq!(workspace.len(), 0);
+    }
+
+    #[test]
+    fn test_workspace_item_decay() {
+        let mut item = WorkspaceItem::with_decay(&[1.0, 2.0], 1.0, 1, 100, 0.9, 1000);
+
+        let initial_salience = item.salience();
+        item.apply_decay(1.0);
+
+        assert!(
+            item.salience() < initial_salience,
+            "Salience should decrease after decay"
+        );
+    }
+
+    #[test]
+    fn test_workspace_item_expiry() {
+        let item = WorkspaceItem::with_decay(&[1.0], 0.5, 1, 100, 0.95, 500);
+
+        assert!(!item.is_expired(200), "Should not be expired at t=200");
+        assert!(item.is_expired(700), "Should be expired at t=700");
     }
 }
