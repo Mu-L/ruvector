@@ -52,6 +52,34 @@ const networkState = {
 // Task queue for distribution
 const taskQueue = [];
 
+// Ledger storage for multi-device sync (keyed by public key)
+const nodeLedgers = new Map();
+
+// CRDT merge for ledger states
+function mergeLedgerStates(deviceStates) {
+  const merged = { earned: {}, spent: {}, balance: 0 };
+
+  for (const [deviceId, state] of deviceStates) {
+    // Merge earned (max wins for each key)
+    for (const [key, value] of Object.entries(state.earned || {})) {
+      merged.earned[key] = Math.max(merged.earned[key] || 0, value);
+    }
+    // Merge spent (max wins for each key)
+    for (const [key, value] of Object.entries(state.spent || {})) {
+      merged.spent[key] = Math.max(merged.spent[key] || 0, value);
+    }
+  }
+
+  // Calculate balance
+  const totalEarned = Object.values(merged.earned).reduce((a, b) => a + b, 0);
+  const totalSpent = Object.values(merged.spent).reduce((a, b) => a + b, 0);
+  merged.balance = totalEarned - totalSpent;
+  merged.totalEarned = totalEarned;
+  merged.totalSpent = totalSpent;
+
+  return merged;
+}
+
 // Create HTTP server
 const server = createServer((req, res) => {
   // Health check endpoint
@@ -398,6 +426,68 @@ wss.on('connection', (ws, req) => {
                 from: nodeId,
               }));
             }
+          }
+          break;
+
+        // ========================================
+        // Ledger Sync Messages (Multi-device sync)
+        // ========================================
+
+        case 'ledger_sync':
+          // Store and broadcast ledger state
+          {
+            const ledgerKey = message.publicKey || nodeId;
+            if (!nodeLedgers.has(ledgerKey)) {
+              nodeLedgers.set(ledgerKey, new Map());
+            }
+            const ledger = nodeLedgers.get(ledgerKey);
+
+            // Store this device's state
+            ledger.set(message.nodeId || nodeId, {
+              earned: message.state?.earned || {},
+              spent: message.state?.spent || {},
+              timestamp: message.timestamp || Date.now(),
+            });
+
+            console.log(`[Relay] Ledger sync from ${nodeId}, key: ${ledgerKey}`);
+
+            // Broadcast merged state to all devices with same identity
+            const mergedState = mergeLedgerStates(ledger);
+            for (const [nId, nWs] of nodes) {
+              if (nWs.readyState === WebSocket.OPEN && nWs.ledgerKey === ledgerKey) {
+                nWs.send(JSON.stringify({
+                  type: 'ledger_sync',
+                  state: mergedState,
+                  deviceCount: ledger.size,
+                  timestamp: Date.now(),
+                }));
+              }
+            }
+
+            // Acknowledge sync
+            ws.send(JSON.stringify({
+              type: 'ledger_sync_ack',
+              balance: mergedState.balance,
+              deviceCount: ledger.size,
+            }));
+          }
+          break;
+
+        case 'ledger_subscribe':
+          // Subscribe to ledger updates for a public key
+          ws.ledgerKey = message.publicKey;
+          console.log(`[Relay] Node ${nodeId} subscribed to ledger ${message.publicKey}`);
+
+          // Send current state if exists
+          const existingLedger = nodeLedgers.get(message.publicKey);
+          if (existingLedger) {
+            const state = mergeLedgerStates(existingLedger);
+            ws.send(JSON.stringify({
+              type: 'ledger_sync',
+              state,
+              deviceCount: existingLedger.size,
+              timestamp: Date.now(),
+            }));
           }
           break;
 

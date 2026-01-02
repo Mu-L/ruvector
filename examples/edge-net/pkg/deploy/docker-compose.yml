@@ -1,0 +1,162 @@
+# @ruvector/edge-net Genesis Node - Docker Compose Configuration
+#
+# Local development and testing configuration.
+# For production, consider using Kubernetes or managed container services.
+#
+# Usage:
+#   docker-compose -f deploy/docker-compose.yml up -d
+#   docker-compose -f deploy/docker-compose.yml logs -f genesis
+#   docker-compose -f deploy/docker-compose.yml down
+#
+# Test cluster:
+#   docker-compose -f deploy/docker-compose.yml --profile cluster up -d
+
+version: '3.8'
+
+services:
+  # ============================================
+  # Primary Genesis Node
+  # ============================================
+  genesis:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: ruvector/edge-net-genesis:latest
+    container_name: edge-net-genesis
+    restart: unless-stopped
+    ports:
+      - "8787:8787"    # WebSocket signaling
+      - "8788:8788"    # Health check / metrics
+    volumes:
+      - genesis-data:/data/genesis
+    environment:
+      - NODE_ENV=production
+      - GENESIS_PORT=8787
+      - GENESIS_HOST=0.0.0.0
+      - HEALTH_PORT=8788
+      - GENESIS_DATA=/data/genesis
+      - LOG_FORMAT=json
+      - LOG_LEVEL=info
+      - METRICS_ENABLED=true
+      # Firebase (optional - uncomment and set values)
+      # - FIREBASE_API_KEY=${FIREBASE_API_KEY}
+      # - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8788/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - edge-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================
+  # Secondary Genesis Node (cluster profile)
+  # ============================================
+  genesis-2:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: ruvector/edge-net-genesis:latest
+    container_name: edge-net-genesis-2
+    restart: unless-stopped
+    profiles:
+      - cluster
+    ports:
+      - "8789:8787"    # WebSocket signaling
+      - "8790:8788"    # Health check / metrics
+    volumes:
+      - genesis-2-data:/data/genesis
+    environment:
+      - NODE_ENV=production
+      - GENESIS_PORT=8787
+      - GENESIS_HOST=0.0.0.0
+      - HEALTH_PORT=8788
+      - GENESIS_DATA=/data/genesis
+      - LOG_FORMAT=json
+      - LOG_LEVEL=info
+      - METRICS_ENABLED=true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8788/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - edge-net
+    depends_on:
+      - genesis
+
+  # ============================================
+  # Prometheus (monitoring profile)
+  # ============================================
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: edge-net-prometheus
+    restart: unless-stopped
+    profiles:
+      - monitoring
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    networks:
+      - edge-net
+    depends_on:
+      - genesis
+
+  # ============================================
+  # Grafana (monitoring profile)
+  # ============================================
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: edge-net-grafana
+    restart: unless-stopped
+    profiles:
+      - monitoring
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=edgenet
+      - GF_USERS_ALLOW_SIGN_UP=false
+    networks:
+      - edge-net
+    depends_on:
+      - prometheus
+
+# ============================================
+# Networks
+# ============================================
+networks:
+  edge-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# ============================================
+# Volumes
+# ============================================
+volumes:
+  genesis-data:
+    driver: local
+  genesis-2-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local

@@ -29,12 +29,14 @@ A distributed computing platform that enables collective resource sharing for AI
 
 ## Table of Contents
 
+- [WebRTC P2P Networking](#webrtc-p2p-networking)
 - [What is Edge-Net?](#what-is-edge-net)
 - [Key Features](#key-features)
 - [Quick Start](#quick-start)
 - [How It Works](#how-it-works)
 - [AI Computing Tasks](#ai-computing-tasks)
 - [Pi-Key Identity System](#pi-key-identity-system)
+- [Security Architecture](#security-architecture)
 - [Self-Optimization](#self-optimization)
 - [Tutorials](#tutorials)
 - [API Reference](#api-reference)
@@ -42,6 +44,124 @@ A distributed computing platform that enables collective resource sharing for AI
 - [Exotic AI Capabilities](#exotic-ai-capabilities)
 - [Core Architecture & Capabilities](#core-architecture--capabilities)
 - [Self-Learning Hooks & MCP Integration](#self-learning-hooks--mcp-integration)
+- [Distributed AI Agents & Workers](#distributed-ai-agents--workers)
+
+---
+
+## WebRTC P2P Networking
+
+Edge-net implements **real WebRTC peer-to-peer connectivity** for direct browser-to-browser communication, with Google Cloud genesis nodes for global coordination.
+
+### P2P Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    WEBRTC P2P NETWORK ARCHITECTURE                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   ┌─────────────┐     Signaling      ┌─────────────┐                        │
+│   │  Browser A  │◄──────────────────►│   Relay     │  (WebSocket)           │
+│   │  (Node 1)   │   offer/answer     │   Server    │                        │
+│   └──────┬──────┘     ICE candidates └─────────────┘                        │
+│          │                                                                  │
+│          │ WebRTC Data Channel (DTLS encrypted, direct P2P)                 │
+│          │                                                                  │
+│          ▼                                                                  │
+│   ┌─────────────┐                    ┌─────────────┐                        │
+│   │  Browser B  │◄──────────────────►│  Browser C  │                        │
+│   │  (Node 2)   │   Direct P2P       │  (Node 3)   │                        │
+│   └─────────────┘                    └─────────────┘                        │
+│                                                                             │
+│   Genesis Nodes (Google Cloud):                                             │
+│   • us-central1  • europe-west1  • asia-east1                               │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### WebRTC Features
+
+| Feature | Description |
+|---------|-------------|
+| **Real P2P Data Channels** | Direct browser-to-browser communication |
+| **ICE/STUN/TURN** | NAT traversal with Google STUN servers |
+| **DTLS Encryption** | End-to-end encrypted data channels |
+| **WebSocket Signaling** | Relay server for connection establishment |
+| **Automatic Reconnection** | Self-healing connections with exponential backoff |
+| **Heartbeat Monitoring** | Connection health with 5s heartbeat |
+| **Connection Quality Metrics** | Latency, throughput, packet loss tracking |
+| **Fallback Simulation** | Offline mode when signaling unavailable |
+
+### Genesis Nodes (Google Cloud)
+
+| Region | Host | Purpose |
+|--------|------|---------|
+| **us-central1** | edge-net-genesis-us.ruvector.dev | Americas coordination |
+| **europe-west1** | edge-net-genesis-eu.ruvector.dev | EMEA coordination |
+| **asia-east1** | edge-net-genesis-asia.ruvector.dev | APAC coordination |
+
+### WebRTC Security
+
+| Security Feature | Implementation |
+|-----------------|----------------|
+| **DTLS 1.2+** | Data channel encryption |
+| **SCTP** | Reliable ordered delivery |
+| **Origin Validation** | CORS whitelist for browser connections |
+| **Rate Limiting** | 100 msg/min per node |
+| **Message Size Limits** | 64KB max message size |
+| **Connection Limits** | 5 connections per IP |
+| **Heartbeat Timeout** | 30s stale connection cleanup |
+| **SDP Sanitization** | Prevent injection attacks |
+
+### Relay Server
+
+The relay server (`relay/index.js`) handles:
+
+```javascript
+// WebRTC signaling message types
+'webrtc_offer'     // Relay SDP offer to target peer
+'webrtc_answer'    // Relay SDP answer back
+'webrtc_ice'       // Relay ICE candidates
+'webrtc_disconnect' // Notify peer of disconnection
+```
+
+### Testing & Benchmarks
+
+```bash
+cd examples/edge-net/relay
+npm install
+node index.js &
+
+cd ../test
+npm install
+
+# Run P2P connectivity test
+npm test
+
+# Run security audit
+npm run security
+
+# Run latency benchmark
+npm run benchmark
+```
+
+### Browser Integration
+
+```javascript
+// join.html implements real WebRTC
+const WEBRTC_CONFIG = {
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+    ]
+};
+
+// Connects to relay server
+const RELAY_URL = 'ws://localhost:8080';
+
+// Real peer connections via RTCPeerConnection
+const pc = new RTCPeerConnection(WEBRTC_CONFIG);
+const channel = pc.createDataChannel('edge-net');
+```
 
 ---
 
@@ -1118,6 +1238,165 @@ ruvector hooks suggest-context  # Context suggestions
 ruvector hooks remember <content> -t <type>  # Store memory
 ruvector hooks recall <query>                # Semantic search
 ```
+
+---
+
+## Distributed AI Agents & Workers
+
+Edge-net enables spawning AI agents and distributed worker pools across the collective compute network. This transforms passive compute contribution into active distributed AI execution.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    DISTRIBUTED AI AGENT SYSTEM                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐       │
+│  │    AgentSpawner │     │   WorkerPool    │     │ TaskOrchestrator│       │
+│  │                 │     │                 │     │                 │       │
+│  │ • Type routing  │     │ • Load balance  │     │ • Workflows     │       │
+│  │ • rUv costing   │     │ • Auto-scaling  │     │ • Dependencies  │       │
+│  │ • Priority mgmt │     │ • Fault tolerant│     │ • Parallel exec │       │
+│  └────────┬────────┘     └────────┬────────┘     └────────┬────────┘       │
+│           │                       │                       │                 │
+│           └───────────────────────┼───────────────────────┘                 │
+│                                   │                                         │
+│                      ┌────────────┴────────────┐                            │
+│                      │   Edge-Net P2P Network   │                            │
+│                      │   (WebRTC Data Channels) │                            │
+│                      └──────────────────────────┘                            │
+│                                                                             │
+│   Agent Types:  researcher | coder | reviewer | tester | analyst |          │
+│                 optimizer | coordinator | embedder                          │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Agent Types
+
+| Type | Capabilities | Base rUv | Use Cases |
+|------|-------------|----------|-----------|
+| **researcher** | search, analyze, summarize, extract | 10 | Codebase analysis, documentation research |
+| **coder** | code, refactor, debug, test | 15 | Feature implementation, bug fixes |
+| **reviewer** | review, audit, validate, suggest | 12 | Code review, security audit |
+| **tester** | test, benchmark, validate, report | 10 | Test creation, coverage analysis |
+| **analyst** | analyze, metrics, report, visualize | 8 | Performance analysis, data insights |
+| **optimizer** | optimize, profile, benchmark, improve | 15 | Performance tuning, efficiency |
+| **coordinator** | orchestrate, route, schedule, monitor | 20 | Multi-agent workflows |
+| **embedder** | embed, vectorize, similarity, search | 5 | Vector operations, semantic search |
+
+### CLI Commands
+
+```bash
+# Show Edge-Net information
+ruvector edge-net info
+
+# Spawn a distributed AI agent
+ruvector edge-net spawn researcher "Analyze the authentication system"
+ruvector edge-net spawn coder "Implement user profile feature" --max-ruv 50 --priority high
+
+# Create and use worker pools
+ruvector edge-net pool create --size 10 --capabilities compute,embed
+ruvector edge-net pool execute "Process batch embeddings"
+
+# Run multi-agent workflows
+ruvector edge-net workflow code-review
+ruvector edge-net workflow feature-dev
+ruvector edge-net workflow optimization
+
+# Check network status
+ruvector edge-net status
+```
+
+### MCP Tools
+
+The following MCP tools are available when `ruvector` is configured as an MCP server:
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `edge_net_info` | Get Edge-Net information | - |
+| `edge_net_spawn` | Spawn distributed agent | type, task, max_ruv, priority |
+| `edge_net_pool_create` | Create worker pool | min_workers, max_workers |
+| `edge_net_pool_execute` | Execute on pool | task, pool_id |
+| `edge_net_workflow` | Run workflow | name (code-review, feature-dev, etc.) |
+| `edge_net_status` | Network status | - |
+
+### Workflows
+
+Pre-built multi-agent workflows:
+
+| Workflow | Steps | Est. rUv | Description |
+|----------|-------|----------|-------------|
+| **code-review** | analyst → reviewer → tester → optimizer | 45 | Comprehensive code analysis |
+| **feature-dev** | researcher → coder → tester → reviewer | 60 | Full feature development cycle |
+| **bug-fix** | analyst → coder → tester | 35 | Bug diagnosis and fix |
+| **optimization** | analyst → optimizer → coder → tester | 50 | Performance improvement |
+| **research** | researcher → analyst → embedder | 30 | Deep research with embeddings |
+
+### JavaScript API
+
+```javascript
+import { AgentSpawner, WorkerPool, TaskOrchestrator, AGENT_TYPES } from '@ruvector/edge-net/agents';
+
+// Spawn a distributed agent
+const spawner = new AgentSpawner(edgeNetNode);
+const agent = await spawner.spawn('coder', 'Implement authentication', {
+    maxRuv: 30,
+    priority: 'high'
+});
+
+// Create a worker pool
+const pool = new WorkerPool(edgeNetNode, {
+    minWorkers: 5,
+    maxWorkers: 20,
+    capabilities: ['compute', 'embed', 'analyze']
+});
+await pool.scale(10);
+
+// Execute tasks on the pool
+const result = await pool.execute({
+    type: 'parallel',
+    task: 'Process batch data',
+    data: largeDataset
+});
+
+// Run multi-agent workflow
+const orchestrator = new TaskOrchestrator(edgeNetNode, spawner);
+await orchestrator.runWorkflow('feature-dev', 'Add user authentication');
+```
+
+### Event System
+
+Agents and workers emit events for monitoring:
+
+```javascript
+agent.on('started', ({ id, type }) => console.log(`Agent ${id} started`));
+agent.on('progress', ({ progress }) => console.log(`Progress: ${progress}%`));
+agent.on('completed', ({ result }) => console.log('Done:', result));
+agent.on('error', ({ error }) => console.error('Error:', error));
+
+pool.on('scaled', ({ workers }) => console.log(`Pool scaled to ${workers}`));
+pool.on('task_completed', ({ taskId }) => console.log(`Task ${taskId} done`));
+```
+
+### rUv Economics for Agents
+
+| Factor | Impact |
+|--------|--------|
+| **Base Cost** | Agent type determines base rUv per task |
+| **Task Complexity** | Longer/complex tasks cost more |
+| **Priority** | High priority = 1.5x cost, Critical = 2x |
+| **Network Load** | Dynamic pricing based on availability |
+| **Early Adopter** | 10x multiplier during genesis phase |
+
+### Security Considerations
+
+- All agent communications are encrypted via DTLS
+- Task execution sandboxed in WebWorkers
+- rUv spending limits prevent runaway costs
+- Input validation on all MCP tools
+- Rate limiting on agent spawning
 
 ### Claude Code Hook Events
 

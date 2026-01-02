@@ -3,6 +3,7 @@ import type { NetworkStats, NodeInfo, TimeCrystal, CreditBalance } from '../type
 import { edgeNetService } from '../services/edgeNet';
 import { storageService } from '../services/storage';
 import { relayClient, type TaskAssignment, type NetworkState as RelayNetworkState } from '../services/relayClient';
+import { firebaseDataService, type NetworkStatistics, type PeerInfo } from '../services/firebaseData';
 
 interface ContributionSettings {
   enabled: boolean;
@@ -39,6 +40,11 @@ interface NetworkState {
   persistedCredits: number;
   persistedTasks: number;
   persistedUptime: number;
+  // Firebase real-time data
+  isFirebaseConnected: boolean;
+  isDemoMode: boolean;
+  firebasePeers: PeerInfo[];
+  firebaseStats: NetworkStatistics | null;
 
   setStats: (stats: Partial<NetworkStats>) => void;
   addNode: (node: NodeInfo) => void;
@@ -62,6 +68,12 @@ interface NetworkState {
   connectToRelay: () => Promise<boolean>;
   disconnectFromRelay: () => void;
   processAssignedTask: (task: TaskAssignment) => Promise<void>;
+  // Firebase methods
+  connectToFirebase: () => Promise<boolean>;
+  disconnectFromFirebase: () => void;
+  setFirebaseStats: (stats: NetworkStatistics) => void;
+  addFirebasePeer: (peer: PeerInfo) => void;
+  removeFirebasePeer: (peerId: string) => void;
 }
 
 const initialStats: NetworkStats = {
@@ -123,6 +135,11 @@ export const useNetworkStore = create<NetworkState>()((set, get) => ({
   persistedCredits: 0,
   persistedTasks: 0,
   persistedUptime: 0,
+  // Firebase state
+  isFirebaseConnected: false,
+  isDemoMode: false,
+  firebasePeers: [],
+  firebaseStats: null,
 
   setStats: (stats) =>
     set((state) => ({ stats: { ...state.stats, ...stats } })),
@@ -286,6 +303,11 @@ export const useNetworkStore = create<NetworkState>()((set, get) => ({
 
       // Load persisted state from IndexedDB first
       await get().loadFromIndexedDB();
+
+      // Connect to Firebase for real-time network data (runs in parallel)
+      get().connectToFirebase().catch((err) => {
+        console.warn('[EdgeNet] Firebase connection failed, using demo mode:', err);
+      });
 
       // Initialize WASM module
       await edgeNetService.init();
@@ -625,5 +647,107 @@ export const useNetworkStore = create<NetworkState>()((set, get) => ({
     } catch (error) {
       console.error('[EdgeNet] Task processing failed:', error);
     }
+  },
+
+  // Firebase real-time data methods
+  connectToFirebase: async () => {
+    console.log('[EdgeNet] Connecting to Firebase for real-time peer data...');
+
+    // Set up event handlers before connecting
+    firebaseDataService.on('connected', () => {
+      set({
+        isFirebaseConnected: true,
+        isDemoMode: false,
+      });
+      console.log('[EdgeNet] Firebase connected');
+    });
+
+    firebaseDataService.on('disconnected', () => {
+      set({
+        isFirebaseConnected: false,
+        firebasePeers: [],
+      });
+      console.log('[EdgeNet] Firebase disconnected');
+    });
+
+    firebaseDataService.on('stats-updated', (statsArg: unknown) => {
+      const stats = statsArg as NetworkStatistics;
+      const state = get();
+      set({
+        firebaseStats: stats,
+        firebasePeers: stats.peers,
+        isDemoMode: firebaseDataService.isInDemoMode(),
+        // Update main stats with Firebase data when we have more peers from Firebase
+        stats: {
+          ...state.stats,
+          // Use Firebase peer count if greater than relay count
+          totalNodes: Math.max(state.stats.totalNodes, stats.totalPeers),
+          activeNodes: Math.max(state.stats.activeNodes, stats.activePeers),
+        },
+        timeCrystal: {
+          ...state.timeCrystal,
+          // Sync node count with Firebase if greater
+          synchronizedNodes: Math.max(state.timeCrystal.synchronizedNodes, stats.activePeers),
+        },
+      });
+    });
+
+    firebaseDataService.on('peer-joined', (peerArg: unknown) => {
+      const peer = peerArg as PeerInfo;
+      set((s) => ({
+        firebasePeers: [...s.firebasePeers.filter(p => p.id !== peer.id), peer],
+      }));
+      console.log('[EdgeNet] Firebase peer joined:', peer.id.slice(0, 8));
+    });
+
+    firebaseDataService.on('peer-left', (peerIdArg: unknown) => {
+      const peerId = peerIdArg as string;
+      set((s) => ({
+        firebasePeers: s.firebasePeers.filter(p => p.id !== peerId),
+      }));
+      console.log('[EdgeNet] Firebase peer left:', peerId.slice(0, 8));
+    });
+
+    firebaseDataService.on('error', (errorArg: unknown) => {
+      const error = errorArg as Error;
+      console.error('[EdgeNet] Firebase error:', error);
+    });
+
+    // Connect to Firebase
+    const connected = await firebaseDataService.connect();
+
+    if (!connected) {
+      // Running in demo mode
+      set({ isDemoMode: true });
+      console.log('[EdgeNet] Running in Firebase demo mode');
+    }
+
+    return connected;
+  },
+
+  disconnectFromFirebase: () => {
+    firebaseDataService.disconnect();
+    set({
+      isFirebaseConnected: false,
+      isDemoMode: false,
+      firebasePeers: [],
+      firebaseStats: null,
+    });
+  },
+
+  setFirebaseStats: (stats: NetworkStatistics) => {
+    set({ firebaseStats: stats });
+  },
+
+  addFirebasePeer: (peer: PeerInfo) => {
+    set((s) => ({
+      firebasePeers: [...s.firebasePeers.filter(p => p.id !== peer.id), peer],
+    }));
+  },
+
+  removeFirebasePeer: (peerId: string) => {
+    set((s) => ({
+      firebasePeers: s.firebasePeers.filter(p => p.id !== peerId),
+    }));
   },
 }));

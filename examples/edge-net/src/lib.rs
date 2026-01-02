@@ -56,6 +56,8 @@ pub mod swarm;
 pub mod capabilities;
 pub mod compute;
 pub mod ai;
+#[cfg(feature = "qudag")]
+pub mod qudag;
 
 use identity::WasmNodeIdentity;
 use learning::NetworkLearning;
@@ -68,6 +70,8 @@ use adversarial::AdversarialSimulator;
 use evolution::{EconomicEngine, EvolutionEngine, NetworkTopology, OptimizationEngine};
 use tribute::{FoundingRegistry, ContributionStream};
 pub use capabilities::WasmCapabilities;
+#[cfg(feature = "qudag")]
+pub use qudag::WasmQuDag;
 
 /// Initialize panic hook for better error messages in console
 #[wasm_bindgen(start)]

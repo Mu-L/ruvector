@@ -15,7 +15,7 @@ path = "src/lib.rs"
 
 [features]
 default = ["console_error_panic_hook"]
-full = ["embeddings", "neural", "exotic", "learning-enhanced"]
+full = ["embeddings", "neural", "exotic", "learning-enhanced", "qudag"]
 embeddings = []
 neural = []
 bench = []
@@ -25,8 +25,10 @@ exotic = ["dep:ruvector-exotic-wasm"]
 learning-enhanced = ["dep:ruvector-learning-wasm", "dep:ruvector-nervous-system-wasm"]
 # CRDT-based enhanced economy
 economy-enhanced = ["dep:ruvector-economy-wasm"]
+# QuDAG - Quantum-resistant DAG messaging
+qudag = ["dep:bitchat-qudag"]
 # All exotic capabilities
-exotic-full = ["exotic", "learning-enhanced", "economy-enhanced"]
+exotic-full = ["exotic", "learning-enhanced", "economy-enhanced", "qudag"]
 
 [dependencies]
 # WASM bindings
@@ -88,6 +90,9 @@ ruvector-exotic-wasm = { path = "../../crates/ruvector-exotic-wasm", optional = 
 ruvector-learning-wasm = { path = "../../crates/ruvector-learning-wasm", optional = true }
 ruvector-nervous-system-wasm = { path = "../../crates/ruvector-nervous-system-wasm", optional = true }
 ruvector-economy-wasm = { path = "../../crates/ruvector-economy-wasm", optional = true }
+
+# QuDAG - Quantum-resistant DAG messaging
+bitchat-qudag = { version = "0.1", optional = true }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"

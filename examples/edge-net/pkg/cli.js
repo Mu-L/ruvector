@@ -110,6 +110,9 @@ function printHelp() {
 ${c('bold', 'COMMANDS:')}
   ${c('green', 'start')}       Start an edge-net node in the terminal
   ${c('green', 'join')}        Join network with public key (multi-contributor support)
+  ${c('green', 'genesis')}     Start a genesis/signaling server for P2P network
+  ${c('green', 'firebase')}    Setup Firebase (Google Cloud) for P2P bootstrap
+  ${c('green', 'p2p')}         Start full P2P network node
   ${c('green', 'benchmark')}   Run performance benchmarks
   ${c('green', 'info')}        Show package and WASM information
   ${c('green', 'demo')}        Run interactive demonstration
@@ -122,6 +125,15 @@ ${c('bold', 'EXAMPLES:')}
 
   ${c('dim', '# Join with new identity (multi-contributor)')}
   $ npx @ruvector/edge-net join --generate
+
+  ${c('dim', '# Start genesis/signaling server (for local P2P)')}
+  $ npx @ruvector/edge-net genesis --port 8787
+
+  ${c('dim', '# Setup Firebase for cloud-based P2P bootstrap')}
+  $ npx @ruvector/edge-net firebase --project YOUR_PROJECT_ID
+
+  ${c('dim', '# Start full P2P network node')}
+  $ npx @ruvector/edge-net p2p
 
   ${c('dim', '# Run benchmarks')}
   $ npx @ruvector/edge-net benchmark
@@ -422,6 +434,94 @@ async function runJoin() {
   child.on('close', (code) => process.exit(code));
 }
 
+async function runGenesis() {
+  // Delegate to genesis.js
+  printBanner();
+  console.log(`${c('bold', 'Starting Genesis/Signaling Server...')}\n`);
+
+  const { spawn } = await import('child_process');
+  const args = process.argv.slice(3);
+
+  // Default to port 8787 if not specified
+  if (!args.includes('--port') && !args.includes('-p')) {
+    args.push('--port', '8787');
+  }
+
+  const child = spawn('node', [join(__dirname, 'genesis.js'), ...args], {
+    stdio: 'inherit'
+  });
+  child.on('close', (code) => process.exit(code));
+}
+
+async function runFirebaseSetup() {
+  // Delegate to firebase-setup.js
+  printBanner();
+  console.log(`${c('bold', 'Firebase Setup (Google Cloud)')}\n`);
+
+  const { spawn } = await import('child_process');
+  const args = process.argv.slice(3);
+  const child = spawn('node', [join(__dirname, 'firebase-setup.js'), ...args], {
+    stdio: 'inherit'
+  });
+  child.on('close', (code) => process.exit(code));
+}
+
+async function runP2P() {
+  printBanner();
+  console.log(`${c('bold', 'Starting P2P Network Node...')}\n`);
+
+  await setupPolyfills();
+
+  try {
+    const { createP2PNetwork } = await import('./p2p.js');
+
+    // Generate node ID
+    const nodeId = `node-${Math.random().toString(36).slice(2, 10)}`;
+
+    console.log(`${c('cyan', 'Node ID:')} ${nodeId}`);
+    console.log(`${c('cyan', 'Mode:')} Firebase bootstrap → DHT → Full P2P\n`);
+
+    console.log(`${c('dim', 'Initializing components...')}`);
+
+    const network = await createP2PNetwork(
+      { nodeId },
+      {
+        // Use Firebase bootstrap if configured, fall back to local
+        bootstrapStrategy: process.env.FIREBASE_API_KEY ? 'firebase' : 'local',
+      }
+    );
+
+    console.log(`\n${c('bold', 'NETWORK STATUS:')}`);
+    const stats = network.getStats();
+    console.log(`  ${c('cyan', 'Mode:')}           ${c('green', stats.mode)}`);
+    console.log(`  ${c('cyan', 'Bootstrap:')}      ${stats.bootstrapMode}`);
+    console.log(`  ${c('cyan', 'Peers:')}          ${stats.peers}`);
+    console.log(`  ${c('cyan', 'Firebase:')}       ${stats.firebaseConnected ? c('green', 'Connected') : c('yellow', 'Not configured')}`);
+    console.log(`  ${c('cyan', 'DHT Peers:')}      ${stats.dhtPeers}`);
+    console.log(`  ${c('cyan', 'Ledger Balance:')} ${stats.ledgerBalance}`);
+
+    console.log(`\n${c('dim', 'Press Ctrl+C to stop.')}`);
+
+    // Periodic status updates
+    setInterval(() => {
+      const s = network.getStats();
+      process.stdout.write(`\r${c('dim', `[${new Date().toLocaleTimeString()}]`)} Peers: ${s.peers} | Mode: ${s.mode} | Balance: ${s.ledgerBalance}    `);
+    }, 5000);
+
+    process.on('SIGINT', async () => {
+      console.log(`\n\n${c('yellow', 'Stopping P2P network...')}`);
+      await network.stop();
+      console.log(`${c('green', '✓')} Network stopped.`);
+      process.exit(0);
+    });
+
+  } catch (err) {
+    console.error(`${c('red', '✗ Failed to start P2P network:')}\n`, err.message);
+    console.log(`\n${c('dim', 'Tip: Run')} ${c('cyan', 'npx @ruvector/edge-net firebase')} ${c('dim', 'to setup Firebase bootstrap.')}`);
+    process.exit(1);
+  }
+}
+
 // Main
 const command = process.argv[2] || 'help';
 
@@ -431,6 +531,19 @@ switch (command) {
     break;
   case 'join':
     runJoin();
+    break;
+  case 'genesis':
+  case 'signaling':
+    runGenesis();
+    break;
+  case 'firebase':
+  case 'firebase-setup':
+  case 'gcloud':
+    runFirebaseSetup();
+    break;
+  case 'p2p':
+  case 'network':
+    runP2P();
     break;
   case 'benchmark':
   case 'bench':

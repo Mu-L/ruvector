@@ -1,0 +1,6 @@
+*
+!.gitignore
+!deploy/
+!deploy/**
+!tests/
+!tests/**

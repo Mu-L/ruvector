@@ -1,15 +1,17 @@
 {
   "name": "@ruvector/edge-net",
-  "version": "0.1.1",
+  "version": "0.4.3",
   "type": "module",
-  "description": "Distributed compute intelligence network - contribute browser compute, earn credits. Features Time Crystal coordination, Neural DAG attention, and P2P swarm intelligence.",
+  "description": "Distributed compute intelligence network with WASM cryptographic security - contribute browser compute, spawn distributed AI agents, earn credits. Features Ed25519 signing, PiKey identity, Time Crystal coordination, Neural DAG attention, P2P swarm intelligence, ONNX inference, WebRTC signaling, CRDT ledger, and multi-agent workflows.",
   "main": "ruvector_edge_net.js",
   "module": "ruvector_edge_net.js",
   "types": "ruvector_edge_net.d.ts",
   "bin": {
     "edge-net": "./cli.js",
     "ruvector-edge": "./cli.js",
-    "edge-net-join": "./join.js"
+    "edge-net-join": "./join.js",
+    "edge-net-genesis": "./genesis.js",
+    "edge-net-firebase-setup": "./firebase-setup.js"
   },
   "keywords": [
     "wasm",
@@ -29,7 +31,35 @@
     "time-crystal",
     "dag-attention",
     "swarm-intelligence",
-    "neural-network"
+    "neural-network",
+    "ai-agents",
+    "distributed-agents",
+    "worker-pools",
+    "multi-agent",
+    "webrtc",
+    "task-orchestration",
+    "onnx",
+    "semantic-search",
+    "crdt",
+    "ledger",
+    "signaling",
+    "scheduler",
+    "monitoring",
+    "qdag",
+    "dht",
+    "kademlia",
+    "genesis-node",
+    "turn-server",
+    "nat-traversal",
+    "google-cloud",
+    "firebase",
+    "gcloud",
+    "firestore",
+    "realtime-database",
+    "ed25519",
+    "wasm-cryptography",
+    "pikey",
+    "secure-access"
   ],
   "author": "RuVector Team <team@ruvector.dev>",
   "license": "MIT",
@@ -47,12 +77,32 @@
     "ruvector_edge_net.d.ts",
     "ruvector_edge_net_bg.wasm.d.ts",
     "node/",
+    "deploy/",
+    "tests/",
     "index.js",
     "cli.js",
     "join.js",
     "join.html",
     "network.js",
     "networks.js",
+    "webrtc.js",
+    "agents.js",
+    "real-agents.js",
+    "real-workers.js",
+    "real-workflows.js",
+    "sync.js",
+    "onnx-worker.js",
+    "signaling.js",
+    "qdag.js",
+    "ledger.js",
+    "scheduler.js",
+    "monitor.js",
+    "dht.js",
+    "genesis.js",
+    "p2p.js",
+    "firebase-signaling.js",
+    "firebase-setup.js",
+    "secure-access.js",
     "README.md",
     "LICENSE"
   ],
@@ -63,6 +113,63 @@
     },
     "./wasm": {
       "import": "./ruvector_edge_net_bg.wasm"
+    },
+    "./agents": {
+      "import": "./agents.js"
+    },
+    "./real-agents": {
+      "import": "./real-agents.js"
+    },
+    "./real-workers": {
+      "import": "./real-workers.js"
+    },
+    "./real-workflows": {
+      "import": "./real-workflows.js"
+    },
+    "./sync": {
+      "import": "./sync.js"
+    },
+    "./network": {
+      "import": "./network.js"
+    },
+    "./webrtc": {
+      "import": "./webrtc.js"
+    },
+    "./onnx-worker": {
+      "import": "./onnx-worker.js"
+    },
+    "./signaling": {
+      "import": "./signaling.js"
+    },
+    "./qdag": {
+      "import": "./qdag.js"
+    },
+    "./ledger": {
+      "import": "./ledger.js"
+    },
+    "./scheduler": {
+      "import": "./scheduler.js"
+    },
+    "./monitor": {
+      "import": "./monitor.js"
+    },
+    "./dht": {
+      "import": "./dht.js"
+    },
+    "./genesis": {
+      "import": "./genesis.js"
+    },
+    "./p2p": {
+      "import": "./p2p.js"
+    },
+    "./firebase-signaling": {
+      "import": "./firebase-signaling.js"
+    },
+    "./firebase-setup": {
+      "import": "./firebase-setup.js"
+    },
+    "./secure-access": {
+      "import": "./secure-access.js"
     }
   },
   "sideEffects": [
@@ -80,6 +187,25 @@
     "join:multi": "node join.js --generate",
     "network": "node network.js stats",
     "peers": "node join.js --peers",
-    "history": "node join.js --history"
+    "history": "node join.js --history",
+    "signaling": "node -e \"import('./signaling.js').then(m => new m.SignalingServer().start())\"",
+    "genesis": "node genesis.js",
+    "genesis:start": "node genesis.js --port 8787",
+    "genesis:prod": "NODE_ENV=production node deploy/genesis-prod.js",
+    "genesis:docker": "docker-compose -f deploy/docker-compose.yml up -d",
+    "genesis:docker:logs": "docker-compose -f deploy/docker-compose.yml logs -f genesis",
+    "genesis:docker:stop": "docker-compose -f deploy/docker-compose.yml down",
+    "genesis:docker:build": "docker build -t ruvector/edge-net-genesis:latest -f deploy/Dockerfile .",
+    "p2p": "node -e \"import('./p2p.js').then(m => m.createP2PNetwork({ nodeId: 'test' }))\"",
+    "monitor": "node -e \"import('./monitor.js').then(m => { const mon = new m.Monitor(); mon.start(); setInterval(() => console.log(JSON.stringify(mon.generateReport(), null, 2)), 5000); })\"",
+    "firebase:setup": "node firebase-setup.js",
+    "firebase:check": "node firebase-setup.js --check"
+  },
+  "dependencies": {
+    "@ruvector/ruvllm": "^0.2.3",
+    "@xenova/transformers": "^2.17.2",
+    "firebase": "^10.14.1",
+    "wrtc": "^0.4.7",
+    "ws": "^8.18.3"
   }
 }

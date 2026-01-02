@@ -1,0 +1,38 @@
+# Prometheus configuration for Edge-Net Genesis Node monitoring
+#
+# Scrapes metrics from genesis nodes at /metrics endpoint
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'edge-net-local'
+
+alerting:
+  alertmanagers: []
+
+rule_files: []
+
+scrape_configs:
+  # Primary Genesis Node
+  - job_name: 'genesis'
+    static_configs:
+      - targets: ['genesis:8788']
+        labels:
+          instance: 'genesis-primary'
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # Secondary Genesis Node (if cluster profile enabled)
+  - job_name: 'genesis-cluster'
+    static_configs:
+      - targets: ['genesis-2:8788']
+        labels:
+          instance: 'genesis-secondary'
+    metrics_path: /metrics
+    scrape_interval: 10s
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
