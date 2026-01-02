@@ -21,11 +21,11 @@ const __dirname = dirname(__filename);
 
 // Network configuration
 const NETWORK_CONFIG = {
-    // Bootstrap nodes (DHT entry points)
+    // Genesis nodes on Google Cloud (multi-region)
     bootstrapNodes: [
-        { id: 'bootstrap-1', host: 'edge-net.ruvector.dev', port: 9000 },
-        { id: 'bootstrap-2', host: 'edge-net-2.ruvector.dev', port: 9000 },
-        { id: 'bootstrap-3', host: 'edge-net-3.ruvector.dev', port: 9000 },
+        { id: 'genesis-us-central1', host: 'edge-net-genesis-us.ruvector.dev', port: 9000, region: 'us-central1', cloud: 'gcp' },
+        { id: 'genesis-europe-west1', host: 'edge-net-genesis-eu.ruvector.dev', port: 9000, region: 'europe-west1', cloud: 'gcp' },
+        { id: 'genesis-asia-east1', host: 'edge-net-genesis-asia.ruvector.dev', port: 9000, region: 'asia-east1', cloud: 'gcp' },
     ],
     // Local network simulation for offline/testing
     localSimulation: true,

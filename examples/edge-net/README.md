@@ -29,12 +29,14 @@ A distributed computing platform that enables collective resource sharing for AI
 
 ## Table of Contents
 
+- [WebRTC P2P Networking](#webrtc-p2p-networking)
 - [What is Edge-Net?](#what-is-edge-net)
 - [Key Features](#key-features)
 - [Quick Start](#quick-start)
 - [How It Works](#how-it-works)
 - [AI Computing Tasks](#ai-computing-tasks)
 - [Pi-Key Identity System](#pi-key-identity-system)
+- [Security Architecture](#security-architecture)
 - [Self-Optimization](#self-optimization)
 - [Tutorials](#tutorials)
 - [API Reference](#api-reference)
@@ -42,6 +44,123 @@ A distributed computing platform that enables collective resource sharing for AI
 - [Exotic AI Capabilities](#exotic-ai-capabilities)
 - [Core Architecture & Capabilities](#core-architecture--capabilities)
 - [Self-Learning Hooks & MCP Integration](#self-learning-hooks--mcp-integration)
+
+---
+
+## WebRTC P2P Networking
+
+Edge-net implements **real WebRTC peer-to-peer connectivity** for direct browser-to-browser communication, with Google Cloud genesis nodes for global coordination.
+
+### P2P Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    WEBRTC P2P NETWORK ARCHITECTURE                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   ┌─────────────┐     Signaling      ┌─────────────┐                        │
+│   │  Browser A  │◄──────────────────►│   Relay     │  (WebSocket)           │
+│   │  (Node 1)   │   offer/answer     │   Server    │                        │
+│   └──────┬──────┘     ICE candidates └─────────────┘                        │
+│          │                                                                  │
+│          │ WebRTC Data Channel (DTLS encrypted, direct P2P)                 │
+│          │                                                                  │
+│          ▼                                                                  │
+│   ┌─────────────┐                    ┌─────────────┐                        │
+│   │  Browser B  │◄──────────────────►│  Browser C  │                        │
+│   │  (Node 2)   │   Direct P2P       │  (Node 3)   │                        │
+│   └─────────────┘                    └─────────────┘                        │
+│                                                                             │
+│   Genesis Nodes (Google Cloud):                                             │
+│   • us-central1  • europe-west1  • asia-east1                               │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### WebRTC Features
+
+| Feature | Description |
+|---------|-------------|
+| **Real P2P Data Channels** | Direct browser-to-browser communication |
+| **ICE/STUN/TURN** | NAT traversal with Google STUN servers |
+| **DTLS Encryption** | End-to-end encrypted data channels |
+| **WebSocket Signaling** | Relay server for connection establishment |
+| **Automatic Reconnection** | Self-healing connections with exponential backoff |
+| **Heartbeat Monitoring** | Connection health with 5s heartbeat |
+| **Connection Quality Metrics** | Latency, throughput, packet loss tracking |
+| **Fallback Simulation** | Offline mode when signaling unavailable |
+
+### Genesis Nodes (Google Cloud)
+
+| Region | Host | Purpose |
+|--------|------|---------|
+| **us-central1** | edge-net-genesis-us.ruvector.dev | Americas coordination |
+| **europe-west1** | edge-net-genesis-eu.ruvector.dev | EMEA coordination |
+| **asia-east1** | edge-net-genesis-asia.ruvector.dev | APAC coordination |
+
+### WebRTC Security
+
+| Security Feature | Implementation |
+|-----------------|----------------|
+| **DTLS 1.2+** | Data channel encryption |
+| **SCTP** | Reliable ordered delivery |
+| **Origin Validation** | CORS whitelist for browser connections |
+| **Rate Limiting** | 100 msg/min per node |
+| **Message Size Limits** | 64KB max message size |
+| **Connection Limits** | 5 connections per IP |
+| **Heartbeat Timeout** | 30s stale connection cleanup |
+| **SDP Sanitization** | Prevent injection attacks |
+
+### Relay Server
+
+The relay server (`relay/index.js`) handles:
+
+```javascript
+// WebRTC signaling message types
+'webrtc_offer'     // Relay SDP offer to target peer
+'webrtc_answer'    // Relay SDP answer back
+'webrtc_ice'       // Relay ICE candidates
+'webrtc_disconnect' // Notify peer of disconnection
+```
+
+### Testing & Benchmarks
+
+```bash
+cd examples/edge-net/relay
+npm install
+node index.js &
+
+cd ../test
+npm install
+
+# Run P2P connectivity test
+npm test
+
+# Run security audit
+npm run security
+
+# Run latency benchmark
+npm run benchmark
+```
+
+### Browser Integration
+
+```javascript
+// join.html implements real WebRTC
+const WEBRTC_CONFIG = {
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+    ]
+};
+
+// Connects to relay server
+const RELAY_URL = 'ws://localhost:8080';
+
+// Real peer connections via RTCPeerConnection
+const pc = new RTCPeerConnection(WEBRTC_CONFIG);
+const channel = pc.createDataChannel('edge-net');
+```
 
 ---
 

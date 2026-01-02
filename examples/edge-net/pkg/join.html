@@ -583,21 +583,300 @@
             }
         }
 
-        // Announce presence to network (simulated P2P)
-        function announceToNetwork() {
-            // In production, this would use WebRTC or WebSocket to P2P network
-            peerCount = Math.floor(Math.random() * 5) + 1;
-            document.getElementById('stat-peers').textContent = peerCount;
-            log(`Connected to ${peerCount} peers`, 'success');
+        // ========================================
+        // Real WebRTC P2P Implementation
+        // ========================================
 
-            // Simulate peer discovery
-            setInterval(() => {
-                if (identity) {
-                    const delta = Math.random() > 0.5 ? 1 : -1;
-                    peerCount = Math.max(1, peerCount + delta);
+        // WebRTC Configuration
+        const WEBRTC_CONFIG = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+            ]
+        };
+
+        // Relay server for signaling
+        const RELAY_URL = window.location.hostname === 'localhost'
+            ? 'ws://localhost:8080'
+            : 'wss://edge-net-relay.ruvector.dev';
+
+        let signalingSocket = null;
+        const peerConnections = new Map(); // peerId -> RTCPeerConnection
+        const dataChannels = new Map();    // peerId -> RTCDataChannel
+
+        // Connect to signaling server and announce
+        async function announceToNetwork() {
+            log('Connecting to network...', 'highlight');
+
+            try {
+                signalingSocket = new WebSocket(RELAY_URL);
+
+                signalingSocket.onopen = () => {
+                    log('Connected to relay server', 'success');
+
+                    // Register with network
+                    signalingSocket.send(JSON.stringify({
+                        type: 'register',
+                        nodeId: identity.piKey,
+                        publicKey: identity.publicKey,
+                        siteId: identity.siteId,
+                    }));
+                };
+
+                signalingSocket.onmessage = async (event) => {
+                    try {
+                        const message = JSON.parse(event.data);
+                        await handleSignalingMessage(message);
+                    } catch (err) {
+                        console.error('Message error:', err);
+                    }
+                };
+
+                signalingSocket.onclose = () => {
+                    log('Disconnected from relay', 'warning');
+                    // Attempt reconnection after delay
+                    setTimeout(announceToNetwork, 5000);
+                };
+
+                signalingSocket.onerror = (err) => {
+                    log('Relay connection error', 'error');
+                    console.error('WebSocket error:', err);
+                };
+
+            } catch (err) {
+                log('Failed to connect: ' + err.message, 'error');
+                // Fallback to simulation
+                simulatePeers();
+            }
+        }
+
+        // Handle signaling messages
+        async function handleSignalingMessage(message) {
+            switch (message.type) {
+                case 'welcome':
+                    log(`Registered as ${message.nodeId}`, 'success');
+                    peerCount = message.peers?.length || 0;
                     document.getElementById('stat-peers').textContent = peerCount;
+
+                    // Connect to existing peers
+                    if (message.peers) {
+                        for (const peerId of message.peers) {
+                            if (identity.piKey > peerId) {
+                                await initiatePeerConnection(peerId);
+                            }
+                        }
+                    }
+                    break;
+
+                case 'node_joined':
+                    log(`Peer joined: ${message.nodeId.slice(0, 8)}...`, 'success');
+                    peerCount++;
+                    document.getElementById('stat-peers').textContent = peerCount;
+
+                    // Initiate connection if we have higher ID
+                    if (identity.piKey > message.nodeId) {
+                        await initiatePeerConnection(message.nodeId);
+                    }
+                    break;
+
+                case 'node_left':
+                    log(`Peer left: ${message.nodeId.slice(0, 8)}...`);
+                    closePeerConnection(message.nodeId);
+                    peerCount = Math.max(0, peerCount - 1);
+                    document.getElementById('stat-peers').textContent = peerCount;
+                    break;
+
+                case 'webrtc_offer':
+                    await handleOffer(message.from, message.offer);
+                    break;
+
+                case 'webrtc_answer':
+                    await handleAnswer(message.from, message.answer);
+                    break;
+
+                case 'webrtc_ice':
+                    await handleIceCandidate(message.from, message.candidate);
+                    break;
+
+                case 'webrtc_disconnect':
+                    closePeerConnection(message.from);
+                    break;
+
+                case 'time_crystal_sync':
+                    // Update network phase
+                    break;
+            }
+        }
+
+        // Initiate WebRTC connection to peer
+        async function initiatePeerConnection(peerId) {
+            if (peerConnections.has(peerId)) return;
+
+            log(`Connecting to ${peerId.slice(0, 8)}...`);
+
+            const pc = new RTCPeerConnection(WEBRTC_CONFIG);
+            peerConnections.set(peerId, pc);
+
+            setupPeerConnection(pc, peerId);
+
+            // Create data channel
+            const channel = pc.createDataChannel('edge-net', {
+                ordered: true,
+                maxRetransmits: 3,
+            });
+            setupDataChannel(channel, peerId);
+
+            // Create and send offer
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+
+            signalingSocket.send(JSON.stringify({
+                type: 'webrtc_offer',
+                targetId: peerId,
+                offer: offer,
+            }));
+        }
+
+        // Handle incoming offer
+        async function handleOffer(peerId, offer) {
+            log(`Offer from ${peerId.slice(0, 8)}...`);
+
+            const pc = new RTCPeerConnection(WEBRTC_CONFIG);
+            peerConnections.set(peerId, pc);
+
+            setupPeerConnection(pc, peerId);
+
+            // Handle incoming data channel
+            pc.ondatachannel = (event) => {
+                setupDataChannel(event.channel, peerId);
+            };
+
+            await pc.setRemoteDescription(new RTCSessionDescription(offer));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+
+            signalingSocket.send(JSON.stringify({
+                type: 'webrtc_answer',
+                targetId: peerId,
+                answer: answer,
+            }));
+        }
+
+        // Handle incoming answer
+        async function handleAnswer(peerId, answer) {
+            const pc = peerConnections.get(peerId);
+            if (pc) {
+                await pc.setRemoteDescription(new RTCSessionDescription(answer));
+            }
+        }
+
+        // Handle ICE candidate
+        async function handleIceCandidate(peerId, candidate) {
+            const pc = peerConnections.get(peerId);
+            if (pc && candidate) {
+                try {
+                    await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                } catch (err) {
+                    console.warn('ICE candidate error:', err);
                 }
-            }, 10000);
+            }
+        }
+
+        // Setup peer connection event handlers
+        function setupPeerConnection(pc, peerId) {
+            pc.onicecandidate = (event) => {
+                if (event.candidate && signalingSocket?.readyState === WebSocket.OPEN) {
+                    signalingSocket.send(JSON.stringify({
+                        type: 'webrtc_ice',
+                        targetId: peerId,
+                        candidate: event.candidate,
+                    }));
+                }
+            };
+
+            pc.oniceconnectionstatechange = () => {
+                const state = pc.iceConnectionState;
+                if (state === 'connected') {
+                    log(`P2P connected: ${peerId.slice(0, 8)}...`, 'success');
+                } else if (state === 'disconnected' || state === 'failed') {
+                    closePeerConnection(peerId);
+                }
+            };
+        }
+
+        // Setup data channel event handlers
+        function setupDataChannel(channel, peerId) {
+            dataChannels.set(peerId, channel);
+
+            channel.onopen = () => {
+                log(`Data channel open: ${peerId.slice(0, 8)}...`, 'success');
+            };
+
+            channel.onmessage = (event) => {
+                try {
+                    const message = JSON.parse(event.data);
+                    handleP2PMessage(peerId, message);
+                } catch (err) {
+                    console.error('P2P message error:', err);
+                }
+            };
+
+            channel.onclose = () => {
+                dataChannels.delete(peerId);
+            };
+        }
+
+        // Handle P2P messages over data channel
+        function handleP2PMessage(peerId, message) {
+            if (message.type === 'task') {
+                log(`Task from ${peerId.slice(0, 8)}: ${message.taskId}`);
+            } else if (message.type === 'result') {
+                log(`Result from ${peerId.slice(0, 8)}: ${message.taskId}`, 'success');
+            }
+        }
+
+        // Send message to peer via data channel
+        function sendToPeer(peerId, message) {
+            const channel = dataChannels.get(peerId);
+            if (channel && channel.readyState === 'open') {
+                channel.send(JSON.stringify(message));
+                return true;
+            }
+            return false;
+        }
+
+        // Broadcast to all connected peers
+        function broadcastToPeers(message) {
+            let sent = 0;
+            for (const [peerId, channel] of dataChannels) {
+                if (channel.readyState === 'open') {
+                    channel.send(JSON.stringify(message));
+                    sent++;
+                }
+            }
+            return sent;
+        }
+
+        // Close peer connection
+        function closePeerConnection(peerId) {
+            const channel = dataChannels.get(peerId);
+            if (channel) {
+                channel.close();
+                dataChannels.delete(peerId);
+            }
+
+            const pc = peerConnections.get(peerId);
+            if (pc) {
+                pc.close();
+                peerConnections.delete(peerId);
+            }
+        }
+
+        // Fallback simulation mode
+        function simulatePeers() {
+            log('Using simulation mode (offline)', 'warning');
+            peerCount = 3;
+            document.getElementById('stat-peers').textContent = peerCount;
         }
 
         // Utility functions
