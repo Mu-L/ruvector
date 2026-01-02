@@ -87,10 +87,10 @@ interface NativeMemoryResult {
 interface NativeStats {
   total_queries: number;
   memory_nodes: number;
-  patterns_learned: number;
+  training_steps: number;
   avg_latency_ms: number;
-  cache_hit_rate: number;
-  router_accuracy: number;
+  total_insertions: number;
+  total_searches: number;
 }
 
 interface NativeSimdOps {
