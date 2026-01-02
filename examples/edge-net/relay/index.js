@@ -28,6 +28,9 @@ const ALLOWED_ORIGINS = new Set([
   'http://localhost:5173',
   'https://edge-net.ruv.io',
   'https://ruvector.dev',
+  'https://edge-net-dashboard-875130704813.us-central1.run.app',
+  'https://edge-net-genesis-875130704813.us-central1.run.app',
+  'https://edge-net-relay-875130704813.us-central1.run.app',
 ]);
 
 // Connected nodes

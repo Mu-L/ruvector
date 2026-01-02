@@ -11,6 +11,11 @@
  * - 'task-error'    - Report execution failure to originator
  * - 'task-progress' - Optional progress updates during execution
  *
+ * Credit Integration:
+ * - Workers automatically earn credits when completing tasks
+ * - Task submitters spend credits when submitting tasks
+ * - Credits tracked via CRDT ledger for conflict-free replication
+ *
  * @module @ruvector/edge-net/task-execution-handler
  */
 
