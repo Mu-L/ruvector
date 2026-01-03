@@ -1,35 +1,48 @@
 # @ruvector/edge-net
 
-**Collective AI Computing Network - Share, Contribute, Compute Together**
+**The Decentralized AI Compute Network - Private, Modular, Unstoppable**
 
-A distributed computing platform that enables collective resource sharing for AI workloads. Contributors share idle compute resources, earning participation units (rUv) that can be used to access the network's collective AI computing power.
+Transform idle browser compute into a globally distributed AI infrastructure. Edge-net combines WebRTC P2P networking, WASM-accelerated cryptography, and a modular plugin architecture to create a self-sustaining collective intelligence network.
+
+> **v0.5.1** - Now with hardened plugin system featuring Ed25519 verification, rate limiting, and HKDF key derivation.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│              EDGE-NET: COLLECTIVE AI COMPUTING NETWORK                      │
+│              EDGE-NET: DECENTRALIZED AI COMPUTE NETWORK                     │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │   ┌─────────────┐       ┌─────────────┐       ┌─────────────┐              │
-│   │  Your       │       │  Collective │       │  AI Tasks   │              │
-│   │  Browser    │◄─────►│  Network    │◄─────►│  Completed  │              │
-│   │  (Idle CPU) │  P2P  │  (1000s)    │       │  for You    │              │
+│   │  Browser    │       │  Global P2P │       │  AI Tasks   │              │
+│   │  Nodes      │◄─────►│  Mesh       │◄─────►│  Executed   │              │
+│   │  (WASM)     │ WebRTC│  (Genesis)  │       │  Privately  │              │
 │   └─────────────┘       └─────────────┘       └─────────────┘              │
 │         │                     │                     │                       │
 │         ▼                     ▼                     ▼                       │
 │   ┌─────────────┐       ┌─────────────┐       ┌─────────────┐              │
-│   │  Contribute │       │  Earn rUv   │       │  Use rUv    │              │
-│   │  Compute    │  ───► │  Units      │  ───► │  for AI     │              │
-│   │  When Idle  │       │  (Credits)  │       │  Workloads  │              │
+│   │  Contribute │       │  Earn rUv   │       │  Extend via │              │
+│   │  Idle CPU   │  ───► │  Credits    │  ───► │  Plugins    │              │
+│   │  Securely   │       │  Privately  │       │  Modularly  │              │
 │   └─────────────┘       └─────────────┘       └─────────────┘              │
 │                                                                             │
-│   Vector Search │ Embeddings │ Semantic Match │ Encryption │ Compression   │
+│   Vector Search │ Embeddings │ E2E Encryption │ Federated ML │ Swarm AI    │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## Why Edge-Net?
+
+| Problem | Edge-Net Solution |
+|---------|-------------------|
+| **Centralized AI** requires sending your data to cloud providers | **Local-first** - your data never leaves your browser |
+| **GPU scarcity** makes AI expensive and inaccessible | **Collective compute** - thousands of browsers working together |
+| **Monolithic systems** force all-or-nothing adoption | **Plugin architecture** - enable only what you need |
+| **Closed networks** lock you into vendor ecosystems | **Open P2P** - WebRTC mesh with no central authority |
+| **Opaque AI** - you can't verify what's running | **Transparent WASM** - auditable, reproducible compute |
+
 ## Table of Contents
 
 - [WebRTC P2P Networking](#webrtc-p2p-networking)
+- [Plugin System](#plugin-system)
 - [What is Edge-Net?](#what-is-edge-net)
 - [Key Features](#key-features)
 - [Quick Start](#quick-start)
@@ -91,7 +104,7 @@ Edge-net implements **real WebRTC peer-to-peer connectivity** for direct browser
 | **Connection Quality Metrics** | Latency, throughput, packet loss tracking |
 | **Fallback Simulation** | Offline mode when signaling unavailable |
 
-### Genesis Nodes (Google Cloud)
+### Genesis Nodes 
 
 | Region | Host | Purpose |
 |--------|------|---------|
@@ -162,6 +175,201 @@ const RELAY_URL = 'ws://localhost:8080';
 const pc = new RTCPeerConnection(WEBRTC_CONFIG);
 const channel = pc.createDataChannel('edge-net');
 ```
+
+---
+
+## Plugin System
+
+Edge-net features a **modular plugin architecture** that lets you enable only the capabilities you need. Plugins are cryptographically verified, sandboxed, and rate-limited for security.
+
+### Plugin Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      EDGE-NET PLUGIN ARCHITECTURE                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │                        Plugin Loader (Secure)                        │   │
+│   │  • Ed25519 signature verification  • Rate limiting (100 req/min)    │   │
+│   │  • SHA-256 integrity checks        • Capability-based sandbox       │   │
+│   │  • Lazy loading with cache         • Frozen manifest objects        │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│   ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐   │
+│   │   CORE    │ │  NETWORK  │ │  CRYPTO   │ │  PRIVACY  │ │    AI     │   │
+│   │           │ │           │ │           │ │           │ │           │   │
+│   │ Compress  │ │ Mesh Opt  │ │ ZK-Proofs │ │ Onion     │ │ Federated │   │
+│   │ Metrics   │ │ Gossip    │ │ MPC       │ │ Mixnet    │ │ Swarm     │   │
+│   │ Logging   │ │ DHT       │ │ Threshold │ │ PIR       │ │ RL Agent  │   │
+│   └───────────┘ └───────────┘ └───────────┘ └───────────┘ └───────────┘   │
+│                                                                             │
+│   ┌───────────┐ ┌───────────┐ ┌───────────┐                               │
+│   │ ECONOMIC  │ │  STORAGE  │ │  EXOTIC   │                               │
+│   │           │ │           │ │           │                               │
+│   │ Staking   │ │ IPFS      │ │ Time      │                               │
+│   │ AMM       │ │ Arweave   │ │ Crystal   │                               │
+│   │ Auction   │ │ Filecoin  │ │ Morpho    │                               │
+│   └───────────┘ └───────────┘ └───────────┘                               │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Plugin Categories
+
+| Category | Description | Example Plugins |
+|----------|-------------|-----------------|
+| **core** | Essential functionality | compression, metrics, logging |
+| **network** | Network topology & routing | mesh-optimization, gossip-protocol, dht-routing |
+| **crypto** | Cryptographic features | zk-proofs, mpc-compute, threshold-signatures, e2e-encryption |
+| **privacy** | Privacy-enhancing tech | onion-routing, mixnet, pir (private info retrieval) |
+| **ai** | AI/ML capabilities | federated-learning, swarm-intelligence, rl-agents, onnx-inference |
+| **economic** | Incentive mechanisms | reputation-staking, amm-pricing, auction-mechanism |
+| **storage** | Data persistence | ipfs-storage, arweave-persist, filecoin-deals |
+| **exotic** | Experimental features | time-crystal, morphogenetic-net, quantum-sim |
+
+### Plugin Tiers
+
+| Tier | Badge | Description |
+|------|-------|-------------|
+| **stable** | 🟢 | Production-ready, security audited |
+| **beta** | 🟡 | Feature complete, needs testing |
+| **experimental** | 🟠 | Works but may change |
+| **research** | 🔴 | Academic/research only |
+
+### Capability Permissions
+
+Plugins declare required capabilities. The loader enforces these at runtime:
+
+| Capability | Permission | Description |
+|------------|------------|-------------|
+| `network:connect` | Network | Outbound connections |
+| `network:listen` | Network | Accept connections |
+| `network:relay` | Network | Relay for other nodes |
+| `crypto:sign` | Crypto | Digital signatures |
+| `crypto:encrypt` | Crypto | Encryption/decryption |
+| `crypto:keygen` | Crypto | Key generation |
+| `storage:read` | Storage | Read local data |
+| `storage:write` | Storage | Write local data |
+| `storage:delete` | Storage | Delete local data |
+| `compute:cpu` | Compute | CPU-intensive work |
+| `compute:gpu` | Compute | WebGPU acceleration |
+| `compute:wasm` | Compute | WASM module execution |
+| `system:env` | System | Environment variables |
+| `system:fs` | System | Filesystem access |
+| `system:exec` | System | Execute commands (denied by default) |
+
+### Quick Start with Plugins
+
+```javascript
+import { PluginManager } from '@ruvector/edge-net/plugins';
+
+// Get plugin manager instance
+const plugins = PluginManager.getInstance({
+    allowedTiers: ['stable', 'beta'],
+    verifySignatures: true,
+});
+
+// Load individual plugins
+const compression = await plugins.load('core.compression');
+const encryption = await plugins.load('crypto.e2e-encryption');
+
+// Or load a bundle
+await plugins.loadBundle('privacy-focused');
+// Loads: compression, e2e-encryption, onion-routing, zk-proofs, pir
+
+// Use plugins
+const compressed = compression.compress(data);
+const encrypted = encryption.encrypt('peer-123', sensitiveData);
+```
+
+### Available Bundles
+
+| Bundle | Plugins | Use Case |
+|--------|---------|----------|
+| **minimal** | (none) | Bare-bones, maximum control |
+| **standard** | compression, metrics, e2e-encryption | Typical usage |
+| **privacy-focused** | compression, e2e-encryption, onion-routing, zk-proofs, pir | Maximum privacy |
+| **ai-compute** | compression, federated-learning, swarm-intelligence, onnx-inference | AI workloads |
+| **experimental** | All experimental tier plugins | Research & testing |
+
+### CLI Commands
+
+```bash
+# List all plugins
+edge-net plugins list
+
+# Filter by category or tier
+edge-net plugins list privacy
+edge-net plugins list experimental
+
+# Get plugin details
+edge-net plugins info crypto.zk-proofs
+
+# List bundles
+edge-net plugins bundles
+
+# Create custom plugin
+edge-net plugins create my-plugin --category ai --tier experimental
+
+# Validate plugin
+edge-net plugins validate ./my-plugin/index.js
+```
+
+### Creating Custom Plugins
+
+```javascript
+import { BasePlugin, PluginCategory, PluginTier, Capability } from '@ruvector/edge-net/plugins/sdk';
+
+class MyCustomPlugin extends BasePlugin {
+    static manifest = {
+        id: 'custom.my-plugin',
+        name: 'My Custom Plugin',
+        version: '1.0.0',
+        description: 'Does amazing things',
+        category: PluginCategory.AI,
+        tier: PluginTier.EXPERIMENTAL,
+        capabilities: [Capability.COMPUTE_WASM, Capability.NETWORK_CONNECT],
+    };
+
+    async onInit(config, sandbox) {
+        sandbox.require(Capability.COMPUTE_WASM);
+        this.ready = true;
+    }
+
+    async process(data) {
+        // Your plugin logic
+        return { processed: true, data };
+    }
+}
+
+// Register with the plugin system
+import { getRegistry } from '@ruvector/edge-net/plugins/sdk';
+getRegistry().register(MyCustomPlugin);
+```
+
+### Security Features
+
+| Feature | Implementation |
+|---------|----------------|
+| **Ed25519 Signatures** | All non-stable plugins must be cryptographically signed |
+| **SHA-256 Checksums** | Verify plugin integrity before loading |
+| **Rate Limiting** | 100 requests/minute per plugin to prevent DoS |
+| **Capability Sandbox** | Plugins can only access declared capabilities |
+| **Frozen Manifests** | Plugin metadata immutable after load |
+| **HKDF Key Derivation** | Secure key generation with proper entropy |
+| **Path Validation** | Prevent directory traversal attacks |
+| **Trusted Authors** | Public key registry for verified developers |
+
+### Built-in Plugin Implementations
+
+| Plugin | Description | Performance |
+|--------|-------------|-------------|
+| **compression** | LZ4/Zstd compression | 354 MB/s |
+| **e2e-encryption** | AES-256-GCM with HKDF | 54K ops/sec |
+| **federated-learning** | Byzantine-tolerant FL | 12.7M samples/sec |
+| **reputation-staking** | Stake-weighted trust | Instant |
+| **swarm-intelligence** | PSO/GA/DE/ACO optimization | 19K iter/sec |
 
 ---
 

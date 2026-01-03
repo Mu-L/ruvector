@@ -1,11 +1,15 @@
 /**
  * Edge-Net Secure Plugin Loader
  *
+ * Cogito, Creo, Codex — Plugins extend, Core enforces.
+ *
  * Features:
  * - Ed25519 signature verification
  * - SHA-256 integrity checks
  * - Lazy loading with caching
  * - Capability-based sandboxing
+ * - Plugin Failure Isolation
+ * - Economic boundary enforcement
  * - Zero telemetry
  *
  * @module @ruvector/edge-net/plugins/loader
@@ -14,6 +18,234 @@
 import { EventEmitter } from 'events';
 import { createHash, createVerify, generateKeyPairSync, sign, verify } from 'crypto';
 import { PLUGIN_CATALOG, PLUGIN_BUNDLES, Capability, PluginTier } from './plugin-manifest.js';
+
+// ============================================
+// PLUGIN FAILURE CONTRACT
+// ============================================
+
+/**
+ * PluginFailureContract - Defines what happens when plugins fail
+ *
+ * Contract guarantees:
+ * 1. Plugin failures NEVER crash core
+ * 2. Failed plugins enter quarantine
+ * 3. Core continues with degraded functionality
+ * 4. Failures are logged for diagnostics
+ */
+export class PluginFailureContract extends EventEmitter {
+    constructor(options = {}) {
+        super();
+
+        this.config = {
+            // Retry policy
+            maxRetries: options.maxRetries ?? 3,
+            retryDelayMs: options.retryDelayMs ?? 1000,
+            retryBackoffMultiplier: options.retryBackoffMultiplier ?? 2,
+
+            // Quarantine policy
+            quarantineDurationMs: options.quarantineDurationMs ?? 5 * 60 * 1000, // 5 minutes
+            maxQuarantineCount: options.maxQuarantineCount ?? 3,
+
+            // Timeout policy
+            executionTimeoutMs: options.executionTimeoutMs ?? 5000,
+        };
+
+        // Failure tracking
+        this.failures = new Map();       // pluginId -> FailureRecord[]
+        this.quarantine = new Map();     // pluginId -> QuarantineRecord
+        this.circuitBreakers = new Map(); // pluginId -> { open, openedAt, failures }
+    }
+
+    /**
+     * Record a plugin failure
+     */
+    recordFailure(pluginId, error, context = {}) {
+        if (!this.failures.has(pluginId)) {
+            this.failures.set(pluginId, []);
+        }
+
+        const record = {
+            error: error.message,
+            stack: error.stack,
+            context,
+            timestamp: Date.now(),
+        };
+
+        this.failures.get(pluginId).push(record);
+
+        // Update circuit breaker
+        this._updateCircuitBreaker(pluginId);
+
+        this.emit('plugin:failure', { pluginId, ...record });
+
+        return record;
+    }
+
+    /**
+     * Update circuit breaker state
+     * @private
+     */
+    _updateCircuitBreaker(pluginId) {
+        if (!this.circuitBreakers.has(pluginId)) {
+            this.circuitBreakers.set(pluginId, { open: false, openedAt: null, failures: 0 });
+        }
+
+        const breaker = this.circuitBreakers.get(pluginId);
+        breaker.failures++;
+
+        if (breaker.failures >= this.config.maxRetries) {
+            breaker.open = true;
+            breaker.openedAt = Date.now();
+            this._quarantinePlugin(pluginId, 'circuit_breaker_tripped');
+        }
+    }
+
+    /**
+     * Quarantine a failed plugin
+     * @private
+     */
+    _quarantinePlugin(pluginId, reason) {
+        const existingQuarantine = this.quarantine.get(pluginId);
+        const quarantineCount = existingQuarantine ? existingQuarantine.count + 1 : 1;
+
+        const record = {
+            pluginId,
+            reason,
+            count: quarantineCount,
+            startedAt: Date.now(),
+            expiresAt: Date.now() + this.config.quarantineDurationMs,
+            permanent: quarantineCount >= this.config.maxQuarantineCount,
+        };
+
+        this.quarantine.set(pluginId, record);
+
+        this.emit('plugin:quarantined', record);
+
+        // Schedule unquarantine if not permanent
+        if (!record.permanent) {
+            setTimeout(() => {
+                this._tryUnquarantine(pluginId);
+            }, this.config.quarantineDurationMs);
+        }
+
+        return record;
+    }
+
+    /**
+     * Try to release plugin from quarantine
+     * @private
+     */
+    _tryUnquarantine(pluginId) {
+        const record = this.quarantine.get(pluginId);
+        if (!record || record.permanent) return;
+
+        if (Date.now() >= record.expiresAt) {
+            // Reset circuit breaker
+            const breaker = this.circuitBreakers.get(pluginId);
+            if (breaker) {
+                breaker.open = false;
+                breaker.failures = 0;
+            }
+
+            this.quarantine.delete(pluginId);
+            this.emit('plugin:unquarantined', { pluginId });
+        }
+    }
+
+    /**
+     * Check if plugin can execute
+     */
+    canExecute(pluginId) {
+        const quarantine = this.quarantine.get(pluginId);
+        if (quarantine) {
+            if (quarantine.permanent) {
+                return { allowed: false, reason: 'Permanently quarantined', permanent: true };
+            }
+            if (Date.now() < quarantine.expiresAt) {
+                const remainingMs = quarantine.expiresAt - Date.now();
+                return { allowed: false, reason: 'In quarantine', remainingMs };
+            }
+        }
+
+        const breaker = this.circuitBreakers.get(pluginId);
+        if (breaker?.open) {
+            return { allowed: false, reason: 'Circuit breaker open' };
+        }
+
+        return { allowed: true };
+    }
+
+    /**
+     * Execute with failure isolation
+     */
+    async executeIsolated(pluginId, fn, context = {}) {
+        const canExec = this.canExecute(pluginId);
+        if (!canExec.allowed) {
+            throw new Error(`Plugin ${pluginId} blocked: ${canExec.reason}`);
+        }
+
+        try {
+            // Execute with timeout
+            const result = await Promise.race([
+                fn(),
+                new Promise((_, reject) =>
+                    setTimeout(
+                        () => reject(new Error('Execution timeout')),
+                        this.config.executionTimeoutMs
+                    )
+                ),
+            ]);
+
+            // Success - reset failure count for this plugin
+            const breaker = this.circuitBreakers.get(pluginId);
+            if (breaker) {
+                breaker.failures = Math.max(0, breaker.failures - 1);
+            }
+
+            return result;
+        } catch (error) {
+            this.recordFailure(pluginId, error, context);
+            throw error;
+        }
+    }
+
+    /**
+     * Get plugin health status
+     */
+    getHealth(pluginId) {
+        const failures = this.failures.get(pluginId) || [];
+        const quarantine = this.quarantine.get(pluginId);
+        const breaker = this.circuitBreakers.get(pluginId);
+
+        return {
+            pluginId,
+            healthy: !quarantine && !breaker?.open,
+            failureCount: failures.length,
+            recentFailures: failures.slice(-5),
+            quarantine: quarantine ? {
+                reason: quarantine.reason,
+                permanent: quarantine.permanent,
+                expiresAt: quarantine.expiresAt,
+            } : null,
+            circuitBreaker: breaker ? {
+                open: breaker.open,
+                failures: breaker.failures,
+            } : null,
+        };
+    }
+
+    /**
+     * Get overall health summary
+     */
+    getSummary() {
+        return {
+            totalPlugins: this.circuitBreakers.size,
+            quarantined: this.quarantine.size,
+            permanentlyQuarantined: Array.from(this.quarantine.values()).filter(q => q.permanent).length,
+            circuitBreakersOpen: Array.from(this.circuitBreakers.values()).filter(b => b.open).length,
+        };
+    }
+}
 
 // ============================================
 // ED25519 SIGNATURE VERIFICATION
@@ -143,6 +375,15 @@ export class PluginLoader extends EventEmitter {
             rateLimitEnabled: options.rateLimitEnabled ?? true,
             rateLimitRequests: options.rateLimitRequests ?? 100,
             rateLimitWindowMs: options.rateLimitWindowMs ?? 60000,
+
+            // Failure isolation
+            failureIsolation: options.failureIsolation ?? true,
+            maxRetries: options.maxRetries ?? 3,
+            quarantineDurationMs: options.quarantineDurationMs ?? 5 * 60 * 1000,
+            executionTimeoutMs: options.executionTimeoutMs ?? 5000,
+
+            // Economic boundary (CoreInvariants integration)
+            coreInvariants: options.coreInvariants ?? null,
             ...options,
         };
 
@@ -157,6 +398,21 @@ export class PluginLoader extends EventEmitter {
             windowMs: this.options.rateLimitWindowMs,
         });
 
+        // Failure isolation contract
+        this.failureContract = new PluginFailureContract({
+            maxRetries: this.options.maxRetries,
+            quarantineDurationMs: this.options.quarantineDurationMs,
+            executionTimeoutMs: this.options.executionTimeoutMs,
+        });
+
+        // Wire failure events
+        this.failureContract.on('plugin:failure', (data) => {
+            this.emit('plugin:failure', data);
+        });
+        this.failureContract.on('plugin:quarantined', (data) => {
+            this.emit('plugin:quarantined', data);
+        });
+
         // Stats
         this.stats = {
             loaded: 0,
@@ -164,7 +420,16 @@ export class PluginLoader extends EventEmitter {
             verified: 0,
             rejected: 0,
             rateLimited: 0,
+            quarantined: 0,
+            failures: 0,
         };
+    }
+
+    /**
+     * Set CoreInvariants for economic boundary enforcement
+     */
+    setCoreInvariants(coreInvariants) {
+        this.options.coreInvariants = coreInvariants;
     }
 
     /**
@@ -404,6 +669,11 @@ export class PluginLoader extends EventEmitter {
             '__dirname', '__filename', 'module', 'exports'
         ]);
 
+        // Get economic boundary from CoreInvariants if available
+        const economicView = this.options.coreInvariants
+            ? this.options.coreInvariants.getPluginEconomicView()
+            : this._createMockEconomicView();
+
         // Create isolated sandbox context
         const sandbox = {
             // Immutable capability set
@@ -420,6 +690,10 @@ export class PluginLoader extends EventEmitter {
                     throw new Error(`Missing capability: ${cap}`);
                 }
             },
+
+            // Economic boundary (READ-ONLY)
+            // Plugins can observe credits but NEVER modify
+            credits: economicView,
 
             // Resource limits
             limits: Object.freeze({
@@ -459,6 +733,72 @@ export class PluginLoader extends EventEmitter {
 
         // Freeze the sandbox to prevent modification
         return Object.freeze(sandbox);
+    }
+
+    /**
+     * Create mock economic view when CoreInvariants not available
+     * @private
+     */
+    _createMockEconomicView() {
+        return Object.freeze({
+            getBalance: () => 0,
+            getTransactionHistory: () => [],
+            getSummary: () => Object.freeze({ balance: 0, transactions: 0 }),
+            on: () => {},
+            mint: () => { throw new Error('INVARIANT VIOLATION: Plugins cannot mint credits'); },
+            burn: () => { throw new Error('INVARIANT VIOLATION: Plugins cannot burn credits'); },
+            settle: () => { throw new Error('INVARIANT VIOLATION: Plugins cannot settle credits'); },
+            transfer: () => { throw new Error('INVARIANT VIOLATION: Plugins cannot transfer credits'); },
+        });
+    }
+
+    /**
+     * Execute plugin function with failure isolation
+     * Core NEVER crashes from plugin failures
+     */
+    async execute(pluginId, fnName, args = []) {
+        const plugin = this.loadedPlugins.get(pluginId);
+        if (!plugin) {
+            throw new Error(`Plugin not loaded: ${pluginId}`);
+        }
+
+        // Check if plugin is allowed to execute
+        const canExec = this.failureContract.canExecute(pluginId);
+        if (!canExec.allowed) {
+            this.stats.quarantined++;
+            throw new Error(`Plugin ${pluginId} blocked: ${canExec.reason}`);
+        }
+
+        // Execute with failure isolation
+        try {
+            const result = await this.failureContract.executeIsolated(
+                pluginId,
+                async () => {
+                    const fn = plugin.api?.[fnName] || plugin[fnName];
+                    if (typeof fn !== 'function') {
+                        throw new Error(`Plugin ${pluginId} has no function: ${fnName}`);
+                    }
+                    return fn.apply(plugin, args);
+                },
+                { fnName, args }
+            );
+
+            return result;
+        } catch (error) {
+            this.stats.failures++;
+            // Re-throw but core doesn't crash
+            throw error;
+        }
+    }
+
+    /**
+     * Get plugin health including failure status
+     */
+    getHealth(pluginId) {
+        if (!pluginId) {
+            return this.failureContract.getSummary();
+        }
+        return this.failureContract.getHealth(pluginId);
     }
 
     /**
@@ -622,6 +962,7 @@ export class PluginLoader extends EventEmitter {
             ...this.stats,
             catalogSize: Object.keys(PLUGIN_CATALOG).length,
             bundleCount: Object.keys(PLUGIN_BUNDLES).length,
+            health: this.failureContract.getSummary(),
         };
     }
 }

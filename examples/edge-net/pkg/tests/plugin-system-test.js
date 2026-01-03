@@ -19,6 +19,14 @@ import {
     generatePluginTemplate,
 } from '../plugins/index.js';
 
+import { PluginFailureContract } from '../plugins/plugin-loader.js';
+import CoreInvariants, {
+    EconomicBoundary,
+    IdentityFriction,
+    WorkVerifier,
+    DegradationController,
+} from '../core-invariants.js';
+
 import { CompressionPlugin } from '../plugins/implementations/compression.js';
 import { E2EEncryptionPlugin } from '../plugins/implementations/e2e-encryption.js';
 import { FederatedLearningPlugin } from '../plugins/implementations/federated-learning.js';
@@ -362,6 +370,161 @@ test('Swarm intelligence plugin works', async () => {
 
     assert(result.bestFitness < 1, 'Should find good solution');
     assert(result.iterations === 50, 'Should run 50 iterations');
+});
+
+// --- Invariant Enforcement Tests ---
+console.log('\n--- Core Invariants (Cogito, Creo, Codex) ---\n');
+
+test('PluginFailureContract enforces circuit breaker', async () => {
+    const contract = new PluginFailureContract({
+        maxRetries: 3,
+        quarantineDurationMs: 100, // Short for testing
+        executionTimeoutMs: 50,
+    });
+
+    // Record 3 failures to trip circuit breaker
+    contract.recordFailure('test-plugin', new Error('Failure 1'));
+    contract.recordFailure('test-plugin', new Error('Failure 2'));
+    contract.recordFailure('test-plugin', new Error('Failure 3'));
+
+    // Plugin should now be blocked
+    const canExec = contract.canExecute('test-plugin');
+    assert(!canExec.allowed, 'Plugin should be blocked after 3 failures');
+    assert(canExec.reason.includes('quarantine'), 'Should mention quarantine');
+});
+
+test('PluginFailureContract provides health status', () => {
+    const contract = new PluginFailureContract();
+
+    contract.recordFailure('healthy-plugin', new Error('Single failure'));
+
+    const health = contract.getHealth('healthy-plugin');
+    assert(health.healthy, 'Plugin with 1 failure should still be healthy');
+    assertEqual(health.failureCount, 1, 'Should track 1 failure');
+
+    const summary = contract.getSummary();
+    assertEqual(summary.totalPlugins, 1, 'Should track 1 plugin');
+});
+
+test('Economic boundary prevents plugin credit modification', () => {
+    // Create mock credit system
+    const mockCreditSystem = {
+        getBalance: (nodeId) => 100,
+        getTransactionHistory: () => [],
+        getSummary: () => ({ balance: 100 }),
+        ledger: { credit: () => {}, debit: () => {} },
+        on: () => {},
+    };
+
+    const boundary = new EconomicBoundary(mockCreditSystem);
+    const pluginView = boundary.getPluginView();
+
+    // Read operations should work
+    assertEqual(pluginView.getBalance('node-1'), 100, 'Should read balance');
+
+    // Write operations should throw
+    let mintThrew = false;
+    try { pluginView.mint(); } catch (e) {
+        mintThrew = e.message.includes('INVARIANT VIOLATION');
+    }
+    assert(mintThrew, 'mint() should throw invariant violation');
+
+    let burnThrew = false;
+    try { pluginView.burn(); } catch (e) {
+        burnThrew = e.message.includes('INVARIANT VIOLATION');
+    }
+    assert(burnThrew, 'burn() should throw invariant violation');
+
+    let settleThrew = false;
+    try { pluginView.settle(); } catch (e) {
+        settleThrew = e.message.includes('INVARIANT VIOLATION');
+    }
+    assert(settleThrew, 'settle() should throw invariant violation');
+});
+
+test('Identity friction enforces activation delay', () => {
+    const friction = new IdentityFriction({
+        activationDelayMs: 100, // Short for testing
+        warmupTasks: 10,
+    });
+
+    // Register identity
+    friction.registerIdentity('new-node', 'test-public-key');
+
+    // Should not be able to execute immediately
+    const canExec = friction.canExecuteTasks('new-node');
+    assert(!canExec.allowed, 'New identity should not execute immediately');
+    assert(canExec.reason === 'Pending activation', 'Should be pending');
+    assert(canExec.remainingMs > 0, 'Should have remaining time');
+});
+
+test('Work verifier tracks submitted work', () => {
+    const verifier = new WorkVerifier();
+
+    const work = verifier.submitWork('task-1', 'node-1', { result: 'done' }, { proof: 'proof' });
+
+    assert(work.taskId === 'task-1', 'Should track task ID');
+    assert(work.status === 'pending', 'Should start pending');
+    assert(work.resultHash, 'Should hash result');
+    assert(work.challengeDeadline > Date.now(), 'Should have challenge window');
+});
+
+test('Degradation controller changes policy under load', () => {
+    const controller = new DegradationController({
+        warningLoadPercent: 70,
+        criticalLoadPercent: 90,
+    });
+
+    // Normal state
+    let policy = controller.getPolicy();
+    assertEqual(policy.level, 'normal', 'Should start normal');
+    assert(policy.acceptNewTasks, 'Should accept tasks');
+    assert(policy.pluginsEnabled, 'Plugins should be enabled');
+
+    // Update to high load
+    controller.updateMetrics({ cpuLoad: 95 });
+
+    policy = controller.getPolicy();
+    assertEqual(policy.level, 'degraded', 'Should be degraded at 95% load');
+    assert(!policy.pluginsEnabled, 'Plugins should be disabled under load');
+});
+
+test('Plugin loader provides economic boundary to sandbox', () => {
+    const loader = new PluginLoader();
+    const catalog = loader.getCatalog();
+
+    // Loader should have mock economic view
+    assert(catalog.length > 0, 'Should have plugins');
+
+    // Get stats with health
+    const stats = loader.getStats();
+    assert(stats.health, 'Stats should include health');
+    assertEqual(stats.health.totalPlugins, 0, 'No plugins tracked yet');
+});
+
+testAsync('Plugin loader isolates failures', async () => {
+    const loader = new PluginLoader({
+        maxRetries: 2,
+        executionTimeoutMs: 50,
+    });
+
+    // Load a plugin
+    await loader.load('compression');
+    const plugin = loader.get('compression');
+    assert(plugin, 'Plugin should load');
+
+    // Check health before failures
+    let health = loader.getHealth('compression');
+    assert(health.healthy, 'Should be healthy initially');
+
+    // Record failures to trigger circuit breaker
+    loader.failureContract.recordFailure('compression', new Error('Test failure 1'));
+    loader.failureContract.recordFailure('compression', new Error('Test failure 2'));
+
+    // Check health after failures
+    health = loader.getHealth('compression');
+    assert(!health.healthy, 'Should be unhealthy after failures');
+    assert(health.quarantine, 'Should be quarantined');
 });
 
 // --- Summary ---
