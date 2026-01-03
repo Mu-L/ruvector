@@ -107,6 +107,7 @@
     "credits.js",
     "task-execution-handler.js",
     "plugins/",
+    "network-genesis.js",
     "README.md",
     "LICENSE"
   ],
@@ -189,6 +190,9 @@
     },
     "./plugins/catalog": {
       "import": "./plugins/plugin-manifest.js"
+    },
+    "./genesis": {
+      "import": "./network-genesis.js"
     }
   },
   "sideEffects": [

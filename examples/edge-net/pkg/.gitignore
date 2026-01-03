@@ -7,3 +7,4 @@
 !plugins/
 !plugins/**
 !core-invariants.js
+!network-genesis.js
