@@ -31,10 +31,19 @@ thiserror.workspace = true
 # Data processing
 rayon = { workspace = true, optional = true }
 ndarray.workspace = true
+rand = "0.8"
+
+# URL encoding for API calls
+urlencoding = "2.1"
+
+# Compression
+flate2 = "1.1"
 
 [dev-dependencies]
 tokio-test = "0.4"
 rand = "0.8"
+tempfile = "3.8"
+tracing-subscriber = "0.3"
 
 [[example]]
 name = "cross_domain_discovery"
@@ -47,6 +56,14 @@ path = "examples/optimized_benchmark.rs"
 [[example]]
 name = "discovery_hunter"
 path = "examples/discovery_hunter.rs"
+
+[[example]]
+name = "api_client_demo"
+path = "examples/api_client_demo.rs"
+
+[[bin]]
+name = "discover"
+path = "src/bin/discover.rs"
 
 [features]
 default = ["async", "parallel"]

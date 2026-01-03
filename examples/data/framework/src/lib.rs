@@ -33,11 +33,15 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
+pub mod api_clients;
 pub mod coherence;
 pub mod discovery;
+pub mod hnsw;
 pub mod ingester;
 pub mod optimized;
+pub mod persistence;
 pub mod ruvector_native;
+pub mod streaming;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -48,6 +52,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 // Re-exports
+pub use api_clients::{EdgarClient, NoaaClient, OpenAlexClient, SimpleEmbedder};
 pub use coherence::{
     CoherenceBoundary, CoherenceConfig, CoherenceEngine, CoherenceEvent, CoherenceSignal,
 };
@@ -55,6 +60,7 @@ pub use discovery::{
     DiscoveryConfig, DiscoveryEngine, DiscoveryPattern, PatternCategory, PatternStrength,
 };
 pub use ingester::{DataIngester, IngestionConfig, IngestionStats, SourceConfig};
+pub use streaming::{StreamingConfig, StreamingEngine, StreamingEngineBuilder, StreamingMetrics};
 
 /// Framework error types
 #[derive(Error, Debug)]
