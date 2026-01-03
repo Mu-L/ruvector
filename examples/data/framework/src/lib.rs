@@ -36,6 +36,7 @@
 pub mod coherence;
 pub mod discovery;
 pub mod ingester;
+pub mod ruvector_native;
 
 use std::collections::HashMap;
 use std::sync::Arc;

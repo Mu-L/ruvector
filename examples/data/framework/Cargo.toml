@@ -34,6 +34,11 @@ ndarray.workspace = true
 
 [dev-dependencies]
 tokio-test = "0.4"
+rand = "0.8"
+
+[[example]]
+name = "cross_domain_discovery"
+path = "examples/cross_domain_discovery.rs"
 
 [features]
 default = ["async", "parallel"]
