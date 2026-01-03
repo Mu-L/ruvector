@@ -443,11 +443,24 @@ export const useNetworkStore = create<NetworkState>()((set, get) => ({
       const totalRuvEarned = state.persistedCredits + sessionRuvEarned;
       const totalTasks = state.persistedTasks + sessionTasks;
 
+      // Calculate node count from various sources (relay, firebase, local)
+      const relayNodes = state.relayNetworkState?.activeNodes || 0;
+      const firebaseNodes = state.firebaseStats?.activePeers || 0;
+      const localNodes = contributionSettings.enabled ? 1 : 0;
+      const networkNodeCount = Math.max(relayNodes, firebaseNodes, localNodes);
+
+      // Calculate total compute - TFLOPS scales with network nodes
+      // Base compute per node: networkFitness * cpuLimit factor
+      // Each additional node adds ~0.3-0.8 TFLOPS depending on their capability
+      const baseComputePerNode = networkFitness * (contributionSettings.cpuLimit / 100);
+      const networkMultiplier = Math.max(1, networkNodeCount);
+      const totalCompute = Math.round(baseComputePerNode * networkMultiplier * 100) / 100;
+
       set({
         stats: {
-          totalNodes: contributionSettings.enabled ? 1 : 0,
-          activeNodes: contributionSettings.enabled ? 1 : 0,
-          totalCompute: Math.round(networkFitness * (contributionSettings.cpuLimit / 100) * 100) / 100,
+          totalNodes: networkNodeCount,
+          activeNodes: networkNodeCount,
+          totalCompute,
           creditsEarned: Math.round(totalRuvEarned * 100) / 100,
           tasksCompleted: totalTasks,
           uptime: Math.round(totalUptime * 10) / 10,

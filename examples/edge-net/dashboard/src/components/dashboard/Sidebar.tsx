@@ -13,6 +13,10 @@ import {
   Activity,
   KeyRound,
   BookOpen,
+  Users,
+  Bot,
+  Puzzle,
+  Dna,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
@@ -35,6 +39,10 @@ const navItems: NavItem[] = [
   { id: 'overview', label: 'Overview', icon: <LayoutDashboard size={18} /> },
   { id: 'identity', label: 'Identity', icon: <KeyRound size={18} /> },
   { id: 'network', label: 'Network', icon: <Network size={18} /> },
+  { id: 'workers', label: 'Workers', icon: <Users size={18} /> },
+  { id: 'agents', label: 'AI Agents', icon: <Bot size={18} /> },
+  { id: 'genesis', label: 'Genesis', icon: <Dna size={18} /> },
+  { id: 'plugins', label: 'Plugins', icon: <Puzzle size={18} /> },
   { id: 'wasm', label: 'WASM Modules', icon: <Cpu size={18} /> },
   { id: 'cdn', label: 'CDN Scripts', icon: <Package size={18} /> },
   { id: 'mcp', label: 'MCP Tools', icon: <Wrench size={18} /> },
@@ -118,10 +126,21 @@ export function Sidebar({ activeTab, onTabChange, isOpen, onClose, isMobile }: S
         </div>
       </nav>
 
-      {/* Version info */}
+      {/* Version info & Attribution */}
       <div className="px-4 pt-4 border-t border-white/10 mt-auto">
-        <p className="text-xs text-zinc-500">Edge-Net v0.1.1</p>
+        <p className="text-xs text-zinc-500">Edge-Net v0.5.2</p>
         <p className="text-xs text-zinc-600">@ruvector/edge-net</p>
+        <a
+          href="https://ruv.io"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 block text-xs text-sky-500 hover:text-sky-400 transition-colors"
+        >
+          Built by ruv.io
+        </a>
+        <p className="text-[10px] text-zinc-600 mt-1 leading-relaxed">
+          AI infrastructure & distributed computing
+        </p>
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 {
   "name": "@ruvector/edge-net",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "type": "module",
   "description": "Distributed compute intelligence network with WASM cryptographic security - contribute browser compute, spawn distributed AI agents, earn credits. Features Ed25519 signing, PiKey identity, Time Crystal coordination, Neural DAG attention, P2P swarm intelligence, ONNX inference, WebRTC signaling, CRDT ledger, and multi-agent workflows.",
   "main": "ruvector_edge_net.js",
@@ -12,7 +12,8 @@
     "edge-net-join": "./join.js",
     "edge-net-genesis": "./genesis.js",
     "edge-net-firebase-setup": "./firebase-setup.js",
-    "edge-net-plugins": "./plugins/cli.js"
+    "edge-net-plugins": "./plugins/cli.js",
+    "edge-net-models": "./models/models-cli.js"
   },
   "keywords": [
     "wasm",
@@ -80,6 +81,7 @@
     "node/",
     "deploy/",
     "tests/",
+    "models/",
     "index.js",
     "cli.js",
     "join.js",
@@ -108,6 +110,7 @@
     "task-execution-handler.js",
     "plugins/",
     "network-genesis.js",
+    "core-invariants.js",
     "README.md",
     "LICENSE"
   ],
@@ -193,6 +196,21 @@
     },
     "./genesis": {
       "import": "./network-genesis.js"
+    },
+    "./models": {
+      "import": "./models/model-utils.js"
+    },
+    "./models/cli": {
+      "import": "./models/models-cli.js"
+    },
+    "./models/registry": {
+      "import": "./models/registry.json"
+    },
+    "./models/optimizer": {
+      "import": "./models/model-optimizer.js"
+    },
+    "./models/benchmark": {
+      "import": "./models/benchmark.js"
     }
   },
   "sideEffects": [
@@ -222,11 +240,19 @@
     "p2p": "node -e \"import('./p2p.js').then(m => m.createP2PNetwork({ nodeId: 'test' }))\"",
     "monitor": "node -e \"import('./monitor.js').then(m => { const mon = new m.Monitor(); mon.start(); setInterval(() => console.log(JSON.stringify(mon.generateReport(), null, 2)), 5000); })\"",
     "firebase:setup": "node firebase-setup.js",
-    "firebase:check": "node firebase-setup.js --check"
+    "firebase:check": "node firebase-setup.js --check",
+    "models:list": "node models/models-cli.js list",
+    "models:download": "node models/models-cli.js download",
+    "models:optimize": "node models/models-cli.js optimize",
+    "models:benchmark": "node models/models-cli.js benchmark",
+    "models:upload": "node models/models-cli.js upload",
+    "models:train": "node models/models-cli.js train",
+    "models:cache": "node models/models-cli.js cache"
   },
   "dependencies": {
     "@ruvector/ruvllm": "^0.2.3",
     "@xenova/transformers": "^2.17.2",
+    "commander": "^12.1.0",
     "firebase": "^10.14.1",
     "wrtc": "^0.4.7",
     "ws": "^8.18.3"
