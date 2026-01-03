@@ -8,3 +8,4 @@
 !plugins/**
 !core-invariants.js
 !network-genesis.js
+!onnx-worker.js

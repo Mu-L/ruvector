@@ -886,6 +886,7 @@ export class AdaptiveEmbedder {
     if (this.coEditBuffer.length < 2) return 0;
 
     let totalLoss = 0;
+    const batchSize = this.coEditBuffer.length; // Save before clearing
 
     for (const { emb1, emb2 } of this.coEditBuffer) {
       // Use other pairs as negatives
@@ -910,7 +911,7 @@ export class AdaptiveEmbedder {
     this.coEditBuffer = [];
     this.adaptationCount++;
 
-    return totalLoss / this.coEditBuffer.length;
+    return totalLoss / batchSize;
   }
 
   /**
