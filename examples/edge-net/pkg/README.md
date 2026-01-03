@@ -43,6 +43,7 @@ Transform idle browser compute into a globally distributed AI infrastructure. Ed
 
 - [WebRTC P2P Networking](#webrtc-p2p-networking)
 - [Plugin System](#plugin-system)
+- [Core Invariants](#core-invariants)
 - [What is Edge-Net?](#what-is-edge-net)
 - [Key Features](#key-features)
 - [Quick Start](#quick-start)
@@ -361,6 +362,14 @@ getRegistry().register(MyCustomPlugin);
 | **Path Validation** | Prevent directory traversal attacks |
 | **Trusted Authors** | Public key registry for verified developers |
 
+### Plugin Failure Semantics
+
+Plugins operate under explicit failure constraints to prevent ecosystem fragility:
+
+- **Silent degradation**: Plugins may fail, be unloaded, or be rate-limited without warning to the caller
+- **Core isolation**: Network liveness, task routing, and credit settlement never depend on plugin success
+- **No blocking**: Plugins cannot block core operations; timeouts are enforced at the sandbox level
+
 ### Built-in Plugin Implementations
 
 | Plugin | Description | Performance |
@@ -370,6 +379,54 @@ getRegistry().register(MyCustomPlugin);
 | **federated-learning** | Byzantine-tolerant FL | 12.7M samples/sec |
 | **reputation-staking** | Stake-weighted trust | Instant |
 | **swarm-intelligence** | PSO/GA/DE/ACO optimization | 19K iter/sec |
+
+---
+
+## Core Invariants
+
+These rules are not configurable. They define what Edge-net *is*.
+
+| Invariant | Constraint |
+|-----------|------------|
+| **Network liveness without plugins** | The network must route tasks, settle credits, and maintain connections with zero plugins loaded. Plugins extend; they never enable. |
+| **Economic settlement isolation** | rUv minting, burning, and settlement are core-only operations. Economic plugins may observe, suggest, or model—but never execute settlement. |
+| **Identity persistence and decay** | Identities are permanent once created, but reputation decays without activity. New identities face a warm-up curve before full participation. |
+| **Verifiable work or no reward** | Credit issuance requires cryptographic proof of work completion. Unverifiable claims are rejected, not trusted. |
+| **Degradation over halt** | The system degrades gracefully under load, attack, or partial failure. It never halts. Consistency is sacrificed before availability. |
+
+### Economic Boundaries
+
+The credit system is explicitly **not extensible**:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         ECONOMIC SETTLEMENT BOUNDARY                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   CORE (immutable)                    PLUGINS (observable only)             │
+│   ┌─────────────────────────┐        ┌─────────────────────────┐           │
+│   │ • rUv minting           │        │ • Pricing suggestions   │           │
+│   │ • rUv burning           │   ──►  │ • Reputation scoring    │           │
+│   │ • Credit settlement     │  read  │ • Economic modeling     │           │
+│   │ • Balance enforcement   │  only  │ • Auction mechanisms    │           │
+│   │ • Slashing execution    │        │ • AMM simulations       │           │
+│   └─────────────────────────┘        └─────────────────────────┘           │
+│                                                                             │
+│   Plugins CANNOT: mint, burn, transfer, or settle credits directly         │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Identity Anti-Sybil Measures
+
+New identities face friction to prevent plugin marketplace Sybil attacks:
+
+| Mechanism | Description |
+|-----------|-------------|
+| **Delayed activation** | 24-hour window before full task execution privileges |
+| **Reputation warm-up** | Linear ramp from 0.1 to 1.0 reputation over first 100 tasks |
+| **Stake requirement** | Optional stake to unlock higher task priority (slashable) |
+| **Witness diversity** | Task results require confirmation from identities with independent creation times |
 
 ---
 
@@ -1640,6 +1697,8 @@ Edge-net is a **research platform** for collective computing. The rUv units are:
 - Resource participation metrics, not currency
 - Used for balancing contribution and consumption
 - Not redeemable for money or goods outside the network
+
+**Edge-net makes no correctness claims. All results are challengeable.** The system optimizes for coherence and availability, not guaranteed correctness. Disputes are resolved through cryptographic evidence and stake-weighted arbitration, not authority.
 
 ---
 
