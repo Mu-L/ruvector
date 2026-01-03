@@ -48,12 +48,16 @@ export class PluginFailureContract extends EventEmitter {
 
             // Timeout policy
             executionTimeoutMs: options.executionTimeoutMs ?? 5000,
+
+            // Memory management
+            maxFailureHistory: options.maxFailureHistory ?? 100, // Limit failure records per plugin
         };
 
         // Failure tracking
         this.failures = new Map();       // pluginId -> FailureRecord[]
         this.quarantine = new Map();     // pluginId -> QuarantineRecord
         this.circuitBreakers = new Map(); // pluginId -> { open, openedAt, failures }
+        this._quarantineTimers = new Map(); // pluginId -> timerId (prevent timer stacking)
     }
 
     /**
@@ -71,7 +75,13 @@ export class PluginFailureContract extends EventEmitter {
             timestamp: Date.now(),
         };
 
-        this.failures.get(pluginId).push(record);
+        const failures = this.failures.get(pluginId);
+        failures.push(record);
+
+        // Prune old failures to prevent memory leak
+        if (failures.length > this.config.maxFailureHistory) {
+            failures.splice(0, failures.length - this.config.maxFailureHistory);
+        }
 
         // Update circuit breaker
         this._updateCircuitBreaker(pluginId);
@@ -121,11 +131,19 @@ export class PluginFailureContract extends EventEmitter {
 
         this.emit('plugin:quarantined', record);
 
+        // Clear existing timer to prevent stacking
+        const existingTimer = this._quarantineTimers.get(pluginId);
+        if (existingTimer) {
+            clearTimeout(existingTimer);
+        }
+
         // Schedule unquarantine if not permanent
         if (!record.permanent) {
-            setTimeout(() => {
+            const timerId = setTimeout(() => {
+                this._quarantineTimers.delete(pluginId);
                 this._tryUnquarantine(pluginId);
             }, this.config.quarantineDurationMs);
+            this._quarantineTimers.set(pluginId, timerId);
         }
 
         return record;
@@ -184,17 +202,18 @@ export class PluginFailureContract extends EventEmitter {
             throw new Error(`Plugin ${pluginId} blocked: ${canExec.reason}`);
         }
 
+        // Create timeout with proper cleanup
+        let timeoutId;
+        const timeoutPromise = new Promise((_, reject) => {
+            timeoutId = setTimeout(
+                () => reject(new Error('Execution timeout')),
+                this.config.executionTimeoutMs
+            );
+        });
+
         try {
             // Execute with timeout
-            const result = await Promise.race([
-                fn(),
-                new Promise((_, reject) =>
-                    setTimeout(
-                        () => reject(new Error('Execution timeout')),
-                        this.config.executionTimeoutMs
-                    )
-                ),
-            ]);
+            const result = await Promise.race([fn(), timeoutPromise]);
 
             // Success - reset failure count for this plugin
             const breaker = this.circuitBreakers.get(pluginId);
@@ -206,6 +225,9 @@ export class PluginFailureContract extends EventEmitter {
         } catch (error) {
             this.recordFailure(pluginId, error, context);
             throw error;
+        } finally {
+            // Always clean up timeout to prevent memory leak
+            clearTimeout(timeoutId);
         }
     }
 
@@ -244,6 +266,24 @@ export class PluginFailureContract extends EventEmitter {
             permanentlyQuarantined: Array.from(this.quarantine.values()).filter(q => q.permanent).length,
             circuitBreakersOpen: Array.from(this.circuitBreakers.values()).filter(b => b.open).length,
         };
+    }
+
+    /**
+     * Clean up all timers and resources
+     */
+    destroy() {
+        // Clear all quarantine timers
+        for (const timerId of this._quarantineTimers.values()) {
+            clearTimeout(timerId);
+        }
+        this._quarantineTimers.clear();
+
+        // Clear all tracking data
+        this.failures.clear();
+        this.quarantine.clear();
+        this.circuitBreakers.clear();
+
+        this.removeAllListeners();
     }
 }
 

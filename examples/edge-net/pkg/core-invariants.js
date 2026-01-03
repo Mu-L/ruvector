@@ -189,6 +189,7 @@ export class IdentityFriction extends EventEmitter {
 
         // Identity registry
         this.identities = new Map(); // nodeId -> IdentityRecord
+        this._activationTimers = new Map(); // nodeId -> timerId (for cleanup)
     }
 
     /**
@@ -213,10 +214,12 @@ export class IdentityFriction extends EventEmitter {
 
         this.identities.set(nodeId, record);
 
-        // Schedule activation
-        setTimeout(() => {
+        // Schedule activation with tracked timer
+        const timerId = setTimeout(() => {
+            this._activationTimers.delete(nodeId);
             this._activateIdentity(nodeId);
         }, this.config.activationDelayMs);
+        this._activationTimers.set(nodeId, timerId);
 
         this.emit('identity:registered', { nodeId, activatesAt: Date.now() + this.config.activationDelayMs });
 
@@ -378,6 +381,22 @@ export class IdentityFriction extends EventEmitter {
         const record = this.identities.get(nodeId);
         if (!record) return false;
         return record.stake >= this.config.stakeForPriority;
+    }
+
+    /**
+     * Clean up all timers and resources
+     */
+    destroy() {
+        // Clear all activation timers
+        for (const timerId of this._activationTimers.values()) {
+            clearTimeout(timerId);
+        }
+        this._activationTimers.clear();
+
+        // Clear identity data
+        this.identities.clear();
+
+        this.removeAllListeners();
     }
 }
 
@@ -601,9 +620,35 @@ export class WorkVerifier extends EventEmitter {
      * @private
      */
     _hashResult(result) {
-        // Canonical JSON serialization
-        const canonical = JSON.stringify(result, Object.keys(result).sort());
+        // Canonical JSON serialization with deep key sorting
+        const sortKeys = (obj) => {
+            if (obj === null || typeof obj !== 'object') return obj;
+            if (Array.isArray(obj)) return obj.map(sortKeys);
+            return Object.keys(obj).sort().reduce((acc, key) => {
+                acc[key] = sortKeys(obj[key]);
+                return acc;
+            }, {});
+        };
+        const canonical = JSON.stringify(sortKeys(result));
         return createHash(this.config.hashAlgorithm).update(canonical).digest('hex');
+    }
+
+    /**
+     * Clean up old work records to prevent memory leak
+     */
+    pruneOldRecords(maxAgeMs = 24 * 60 * 60 * 1000) {
+        const cutoff = Date.now() - maxAgeMs;
+        let pruned = 0;
+
+        for (const [taskId, record] of this.pendingWork) {
+            if (record.submittedAt < cutoff && record.status !== 'pending') {
+                this.pendingWork.delete(taskId);
+                this.challenges.delete(taskId);
+                pruned++;
+            }
+        }
+
+        return pruned;
     }
 }
 
@@ -632,9 +677,14 @@ export class DegradationController extends EventEmitter {
 
             // Auto-recovery
             recoveryCheckIntervalMs: options.recoveryCheckIntervalMs ?? 30000,
+
+            // Memory management
+            maxHistorySize: options.maxHistorySize ?? 1000,
         };
 
         this.currentLevel = 'normal';
+        // Protected metrics keys - prevents prototype pollution
+        this._allowedMetricKeys = new Set(['cpuLoad', 'memoryUsage', 'pendingTasks', 'errorRate']);
         this.metrics = {
             cpuLoad: 0,
             memoryUsage: 0,
@@ -648,13 +698,16 @@ export class DegradationController extends EventEmitter {
 
     /**
      * Update system metrics
+     * Protected against prototype pollution - only allowed keys are updated
      */
     updateMetrics(metrics) {
-        this.metrics = {
-            ...this.metrics,
-            ...metrics,
-            lastUpdated: Date.now(),
-        };
+        // Only copy allowed metric keys to prevent prototype pollution
+        for (const key of this._allowedMetricKeys) {
+            if (Object.hasOwn(metrics, key) && typeof metrics[key] === 'number') {
+                this.metrics[key] = metrics[key];
+            }
+        }
+        this.metrics.lastUpdated = Date.now();
 
         this._evaluateDegradation();
     }
@@ -684,6 +737,11 @@ export class DegradationController extends EventEmitter {
                 load,
                 timestamp: Date.now(),
             });
+
+            // Prune history to prevent memory leak
+            if (this.degradationHistory.length > this.config.maxHistorySize) {
+                this.degradationHistory.splice(0, this.degradationHistory.length - this.config.maxHistorySize);
+            }
 
             this.emit('level:changed', {
                 from: previousLevel,
