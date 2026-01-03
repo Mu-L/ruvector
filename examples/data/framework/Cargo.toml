@@ -40,6 +40,10 @@ rand = "0.8"
 name = "cross_domain_discovery"
 path = "examples/cross_domain_discovery.rs"
 
+[[example]]
+name = "optimized_benchmark"
+path = "examples/optimized_benchmark.rs"
+
 [features]
 default = ["async", "parallel"]
 async = []
