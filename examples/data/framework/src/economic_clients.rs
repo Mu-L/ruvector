@@ -30,7 +30,12 @@ const RETRY_DELAY_MS: u64 = 1000;
 /// FRED API observations response
 #[derive(Debug, Deserialize)]
 struct FredObservationsResponse {
+    #[serde(default)]
     observations: Vec<FredObservation>,
+    #[serde(default)]
+    error_code: Option<i32>,
+    #[serde(default)]
+    error_message: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -121,14 +126,17 @@ impl FredClient {
         series_id: &str,
         limit: Option<usize>,
     ) -> Result<Vec<SemanticVector>> {
-        let mut url = format!(
-            "{}/series/observations?series_id={}&file_type=json",
-            self.base_url, series_id
-        );
+        // FRED API requires an API key as of 2025
+        let api_key = self.api_key.as_ref().ok_or_else(|| {
+            FrameworkError::Config(
+                "FRED API key required. Get one at https://fred.stlouisfed.org/docs/api/api_key.html".to_string()
+            )
+        })?;
 
-        if let Some(key) = &self.api_key {
-            url.push_str(&format!("&api_key={}", key));
-        }
+        let mut url = format!(
+            "{}/series/observations?series_id={}&file_type=json&api_key={}",
+            self.base_url, series_id, api_key
+        );
 
         if let Some(lim) = limit {
             url.push_str(&format!("&limit={}", lim));
@@ -137,6 +145,11 @@ impl FredClient {
         sleep(self.rate_limit_delay).await;
         let response = self.fetch_with_retry(&url).await?;
         let obs_response: FredObservationsResponse = response.json().await?;
+
+        // Check for API error response
+        if let Some(error_msg) = obs_response.error_message {
+            return Err(FrameworkError::Ingestion(format!("FRED API error: {}", error_msg)));
+        }
 
         let mut vectors = Vec::new();
         for obs in obs_response.observations {

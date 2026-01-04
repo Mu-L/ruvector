@@ -4,7 +4,7 @@
 //! converting responses to SemanticVector format for RuVector discovery.
 //!
 //! # ArXiv API Details
-//! - Base URL: http://export.arxiv.org/api/query
+//! - Base URL: https://export.arxiv.org/api/query
 //! - Free access, no authentication required
 //! - Returns Atom XML feed
 //! - Rate limit: 1 request per 3 seconds (enforced by client)
@@ -146,7 +146,7 @@ impl ArxivClient {
                 .build()
                 .expect("Failed to create HTTP client"),
             embedder: SimpleEmbedder::new(embedding_dim),
-            base_url: "http://export.arxiv.org/api/query".to_string(),
+            base_url: "https://export.arxiv.org/api/query".to_string(),
         }
     }
 
@@ -438,7 +438,7 @@ mod tests {
     #[test]
     fn test_arxiv_client_creation() {
         let client = ArxivClient::new();
-        assert_eq!(client.base_url, "http://export.arxiv.org/api/query");
+        assert_eq!(client.base_url, "https://export.arxiv.org/api/query");
     }
 
     #[test]
