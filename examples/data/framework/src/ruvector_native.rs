@@ -36,6 +36,9 @@ pub enum Domain {
     Seismic,
     Ocean,
     Space,
+    Transportation,
+    Geospatial,
+    Government,
     CrossDomain,
 }
 

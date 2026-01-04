@@ -98,6 +98,10 @@ path = "examples/arxiv_discovery.rs"
 name = "optimized_runner"
 path = "examples/optimized_runner.rs"
 
+[[example]]
+name = "news_social_demo"
+path = "examples/news_social_demo.rs"
+
 [[bin]]
 name = "discover"
 path = "src/bin/discover.rs"

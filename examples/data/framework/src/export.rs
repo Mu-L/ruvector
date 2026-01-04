@@ -628,6 +628,9 @@ fn domain_color(domain: Domain) -> &'static str {
         Domain::Seismic => "sandybrown",
         Domain::Ocean => "aquamarine",
         Domain::Space => "plum",
+        Domain::Transportation => "peachpuff",
+        Domain::Geospatial => "lightgoldenrodyellow",
+        Domain::Government => "lightgray",
         Domain::CrossDomain => "lightcoral",
     }
 }
@@ -645,6 +648,9 @@ fn domain_shape(domain: Domain) -> &'static str {
         Domain::Seismic => "invtriangle",
         Domain::Ocean => "trapezium",
         Domain::Space => "star",
+        Domain::Transportation => "house",
+        Domain::Geospatial => "invhouse",
+        Domain::Government => "folder",
         Domain::CrossDomain => "hexagon",
     }
 }

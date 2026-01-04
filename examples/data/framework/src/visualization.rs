@@ -45,6 +45,9 @@ fn domain_color(domain: Domain) -> &'static str {
         Domain::Seismic => "\x1b[38;5;130m", // Brown color for Seismic
         Domain::Ocean => "\x1b[38;5;39m", // Cyan color for Ocean
         Domain::Space => "\x1b[38;5;141m", // Purple color for Space
+        Domain::Transportation => "\x1b[38;5;208m", // Orange color for Transportation
+        Domain::Geospatial => "\x1b[38;5;118m", // Light green for Geospatial
+        Domain::Government => "\x1b[38;5;243m", // Gray color for Government
         Domain::CrossDomain => COLOR_CROSS,
     }
 }
@@ -62,6 +65,9 @@ fn domain_char(domain: Domain) -> char {
         Domain::Seismic => 'S',
         Domain::Ocean => 'O',
         Domain::Space => 'A', // A for Astronomy/Aerospace
+        Domain::Transportation => 'T',
+        Domain::Geospatial => 'L', // L for Location
+        Domain::Government => 'V', // V for goVernment
         Domain::CrossDomain => 'X',
     }
 }

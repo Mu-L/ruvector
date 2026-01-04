@@ -33,6 +33,7 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
+pub mod academic_clients;
 pub mod api_clients;
 pub mod arxiv_client;
 pub mod biorxiv_client;
@@ -41,12 +42,17 @@ pub mod crossref_client;
 pub mod discovery;
 pub mod economic_clients;
 pub mod export;
+pub mod finance_clients;
 pub mod forecasting;
 pub mod genomics_clients;
+pub mod geospatial_clients;
+pub mod government_clients;
 pub mod hnsw;
 pub mod ingester;
 pub mod mcp_server;
 pub mod medical_clients;
+pub mod ml_clients;
+pub mod news_clients;
 pub mod optimized;
 pub mod patent_clients;
 pub mod persistence;
@@ -56,6 +62,7 @@ pub mod ruvector_native;
 pub mod semantic_scholar;
 pub mod space_clients;
 pub mod streaming;
+pub mod transportation_clients;
 pub mod visualization;
 pub mod wiki_clients;
 
@@ -68,17 +75,31 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 // Re-exports
+pub use academic_clients::{CoreClient, EricClient, UnpaywallClient};
 pub use api_clients::{EdgarClient, NoaaClient, OpenAlexClient, SimpleEmbedder};
 pub use arxiv_client::ArxivClient;
 pub use biorxiv_client::{BiorxivClient, MedrxivClient};
 pub use crossref_client::CrossRefClient;
 pub use economic_clients::{AlphaVantageClient, FredClient, WorldBankClient};
+pub use finance_clients::{BlsClient, CoinGeckoClient, EcbClient, FinnhubClient, TwelveDataClient};
 pub use genomics_clients::{EnsemblClient, GwasClient, NcbiClient, UniProtClient};
+pub use geospatial_clients::{GeonamesClient, NominatimClient, OpenElevationClient, OverpassClient};
+pub use government_clients::{
+    CensusClient, DataGovClient, EuOpenDataClient, UkGovClient, UNDataClient,
+    WorldBankClient as WorldBankGovClient,
+};
 pub use medical_clients::{ClinicalTrialsClient, FdaClient, PubMedClient};
+pub use ml_clients::{
+    HuggingFaceClient, HuggingFaceDataset, HuggingFaceModel, OllamaClient, OllamaModel,
+    PapersWithCodeClient, PaperWithCodeDataset, PaperWithCodePaper, ReplicateClient,
+    ReplicateModel, TogetherAiClient, TogetherModel,
+};
+pub use news_clients::{GuardianClient, HackerNewsClient, NewsDataClient, RedditClient};
 pub use patent_clients::{EpoClient, UsptoPatentClient};
 pub use physics_clients::{ArgoClient, CernOpenDataClient, GeoUtils, MaterialsProjectClient, UsgsEarthquakeClient};
 pub use semantic_scholar::SemanticScholarClient;
 pub use space_clients::{AstronomyClient, ExoplanetClient, NasaClient, SpaceXClient};
+pub use transportation_clients::{GtfsClient, MobilityDatabaseClient, OpenChargeMapClient, OpenRouteServiceClient};
 pub use wiki_clients::{WikidataClient, WikidataEntity, WikipediaClient};
 pub use coherence::{
     CoherenceBoundary, CoherenceConfig, CoherenceEngine, CoherenceEvent, CoherenceSignal,
