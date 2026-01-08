@@ -21,3 +21,4 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 dashmap = { workspace = true }
 parking_lot = { workspace = true }
+ruvector-security = { workspace = true, features = ["middleware"] }

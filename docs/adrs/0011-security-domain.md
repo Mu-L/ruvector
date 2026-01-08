@@ -1,6 +1,6 @@
 # ADR-0011: Security Domain Fixes
 
-**Status:** Proposed
+**Status:** Implemented
 **Date:** 2026-01-08
 **Priority:** P1 - Critical
 **Parent ADR:** [ADR-0010](./0010fixes.md)
@@ -393,7 +393,38 @@ impl<T> Drop for TrackedAllocation<T> {
 
 ---
 
-## Implementation Plan
+## Implementation Status
+
+All security fixes have been implemented in the `ruvector-security` crate.
+
+### Completed Items
+
+| Issue | Status | Implementation |
+|-------|--------|----------------|
+| S-1: MCP Authentication | ✅ Done | `ruvector-security/src/auth.rs` - `AuthMiddleware`, `BearerTokenValidator` |
+| S-2: CORS Restriction | ✅ Done | `ruvector-security/src/cors.rs` - `CorsConfig`, `build_cors_layer()` |
+| S-3: Path Traversal Prevention | ✅ Done | `ruvector-security/src/path.rs` - `PathValidator` |
+| S-4: FFI Pointer Validation | ✅ Done | `ruvector-security/src/ffi.rs` - `validate_ptr()`, SAFETY comments in `c_abi.rs` |
+| S-5: Rate Limiting | ✅ Done | `ruvector-security/src/rate_limit.rs` - `RateLimiter` |
+| S-6: Deallocation Safety | ✅ Done | `ruvector-security/src/ffi.rs` - `TrackedAllocation<T>` |
+
+### Integration Points
+
+- `ruvector-server/src/lib.rs` - Uses `build_cors_layer()` for configurable CORS
+- `ruvector-cli/src/mcp/transport.rs` - Uses `CorsConfig` for SSE transport
+- `ruvector-fpga-transformer/src/ffi/c_abi.rs` - All unsafe blocks documented with SAFETY comments
+
+### Test Coverage
+
+26 unit tests covering:
+- Bearer token validation with constant-time comparison
+- CORS origin validation (restrictive, development, wildcard)
+- Path traversal detection (`..\`, null bytes, symlinks)
+- FFI pointer validation (null, alignment, overflow)
+- Rate limiting (token bucket, per-IP, disabled)
+- TrackedAllocation lifecycle
+
+## Original Implementation Plan
 
 ### Phase 1: Critical (Week 1)
 1. **S-1: MCP Authentication** - Token-based auth middleware

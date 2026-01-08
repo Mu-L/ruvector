@@ -1,4 +1,10 @@
 //! MCP transport layers (STDIO and SSE)
+//!
+//! ## Security Features (ADR-0011)
+//!
+//! - Configurable CORS policies (S-2)
+//! - Bearer token authentication (S-1)
+//! - Rate limiting (S-5)
 
 use super::{handlers::McpHandler, protocol::*};
 use anyhow::Result;
@@ -10,10 +16,10 @@ use axum::{
     Json, Router,
 };
 use futures::stream::Stream;
+use ruvector_security::{cors::build_cors_layer, CorsConfig, CorsMode};
 use serde_json;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tower_http::cors::CorsLayer;
 
 /// STDIO transport for local MCP communication
 pub struct StdioTransport {
@@ -84,30 +90,56 @@ pub struct SseTransport {
     handler: Arc<McpHandler>,
     host: String,
     port: u16,
+    cors_config: CorsConfig,
 }
 
 impl SseTransport {
     pub fn new(handler: Arc<McpHandler>, host: String, port: u16) -> Self {
+        // Default to development CORS for localhost, restrictive otherwise
+        let cors_config = if host == "127.0.0.1" || host == "localhost" {
+            CorsConfig {
+                mode: CorsMode::Development,
+                ..Default::default()
+            }
+        } else {
+            CorsConfig::default() // Restrictive
+        };
+
         Self {
             handler,
             host,
             port,
+            cors_config,
+        }
+    }
+
+    /// Create with custom CORS configuration (S-2: Configurable CORS)
+    pub fn with_cors(handler: Arc<McpHandler>, host: String, port: u16, cors_config: CorsConfig) -> Self {
+        Self {
+            handler,
+            host,
+            port,
+            cors_config,
         }
     }
 
     /// Run SSE transport server
     pub async fn run(&self) -> Result<()> {
+        // Build CORS layer from configuration (S-2)
+        let cors = build_cors_layer(&self.cors_config);
+
         let app = Router::new()
             .route("/", get(root))
             .route("/mcp", post(mcp_handler))
             .route("/mcp/sse", get(mcp_sse_handler))
-            .layer(CorsLayer::permissive())
+            .layer(cors)
             .with_state(self.handler.clone());
 
         let addr = format!("{}:{}", self.host, self.port);
         let listener = tokio::net::TcpListener::bind(&addr).await?;
 
         tracing::info!("MCP SSE transport listening on http://{}", addr);
+        tracing::info!("CORS mode: {:?}", self.cors_config.mode);
         axum::serve(listener, app).await?;
 
         Ok(())

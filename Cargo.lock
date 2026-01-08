@@ -6562,6 +6562,7 @@ dependencies = [
  "ruvector-core",
  "ruvector-gnn",
  "ruvector-graph",
+ "ruvector-security",
  "serde",
  "serde_json",
  "shellexpand",
@@ -7318,6 +7319,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "ruvector-security"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "hmac",
+ "http 1.4.0",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "sha2",
+ "subtle",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tower 0.5.2",
+ "tower-http 0.6.8",
+ "tracing",
+]
+
+[[package]]
 name = "ruvector-server"
 version = "0.1.31"
 dependencies = [
@@ -7325,6 +7347,7 @@ dependencies = [
  "dashmap 6.1.0",
  "parking_lot 0.12.5",
  "ruvector-core",
+ "ruvector-security",
  "serde",
  "serde_json",
  "thiserror 2.0.17",

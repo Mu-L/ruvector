@@ -1,6 +1,25 @@
 //! C ABI bindings for FFI integration
 //!
 //! Provides a stable C interface for linking from other languages.
+//!
+//! ## Safety (ADR-0011 S-4)
+//!
+//! This module contains unsafe FFI code. All unsafe blocks are documented
+//! with SAFETY comments explaining the invariants that must be upheld.
+//!
+//! ### Pointer Requirements
+//!
+//! All pointer parameters must:
+//! - Be non-null (checked at function entry)
+//! - Be properly aligned for the pointed-to type
+//! - Point to valid memory for the specified length
+//! - Remain valid for the duration of the function call
+//!
+//! ### Memory Ownership
+//!
+//! - `FpgaEngine` pointers are owned by the caller and must be freed with `fpga_engine_destroy`
+//! - `FpgaInferenceResult` allocations must be freed with `fpga_result_free`
+//! - All other buffers are borrowed and must remain valid during the call
 
 use std::ffi::{c_char, c_int, c_void, CStr};
 use std::ptr;
@@ -63,9 +82,19 @@ pub extern "C" fn fpga_engine_create() -> *mut FpgaEngine {
 }
 
 /// Destroy an FPGA engine
+///
+/// # Safety
+///
+/// - `engine` must be a valid pointer returned by `fpga_engine_create`
+/// - `engine` must not have been previously destroyed
+/// - After this call, `engine` is invalid and must not be used
 #[no_mangle]
 pub extern "C" fn fpga_engine_destroy(engine: *mut FpgaEngine) {
     if !engine.is_null() {
+        // SAFETY: We've verified the pointer is non-null.
+        // The caller guarantees this pointer was obtained from `fpga_engine_create`
+        // and has not been destroyed yet. Box::from_raw reclaims ownership and
+        // drops the engine, freeing all associated memory.
         unsafe {
             drop(Box::from_raw(engine));
         }
@@ -86,7 +115,14 @@ pub extern "C" fn fpga_load_artifact(
         return FpgaResult::InvalidArgument;
     }
 
+    // SAFETY: We've verified all pointers are non-null above.
+    // - `engine` was obtained from `fpga_engine_create` (caller's responsibility)
+    // - `artifact_bytes` points to valid memory of `artifact_len` bytes (caller's responsibility)
+    // - We borrow `engine` mutably for the duration of this function
     let engine = unsafe { &mut *engine };
+
+    // SAFETY: We've verified `artifact_bytes` is non-null.
+    // Caller guarantees `artifact_bytes` points to `artifact_len` valid bytes.
     let artifact_slice = unsafe { std::slice::from_raw_parts(artifact_bytes, artifact_len) };
 
     let artifact = match crate::artifact::unpack_artifact(artifact_slice) {
@@ -96,6 +132,10 @@ pub extern "C" fn fpga_load_artifact(
 
     match engine.backend.load(&artifact) {
         Ok(model_id) => {
+            // SAFETY: We've verified `model_id_out` is non-null.
+            // - Caller guarantees `model_id_out` points to at least 32 writable bytes
+            // - ModelId::as_bytes() returns exactly 32 bytes
+            // - Memory regions don't overlap (model_id is on stack, model_id_out is caller's buffer)
             unsafe {
                 ptr::copy_nonoverlapping(model_id.as_bytes().as_ptr(), model_id_out, 32);
             }
@@ -136,15 +176,20 @@ pub extern "C" fn fpga_infer(
         return error_result();
     }
 
+    // SAFETY: All pointers verified non-null above.
+    // Caller guarantees `engine` was obtained from `fpga_engine_create`.
     let engine = unsafe { &mut *engine };
 
-    // Parse model ID
+    // SAFETY: `model_id` is non-null and points to exactly 32 bytes (ModelId size).
+    // This is documented in the function's public API contract.
     let id_slice = unsafe { std::slice::from_raw_parts(model_id, 32) };
     let mut id_bytes = [0u8; 32];
     id_bytes.copy_from_slice(id_slice);
     let model = ModelId::new(id_bytes);
 
-    // Parse tokens and mask
+    // SAFETY: `tokens` is non-null and points to `tokens_len` u16 values.
+    // `mask` is non-null and points to `mask_len` u8 values.
+    // Caller guarantees these buffers are valid for the specified lengths.
     let tokens_slice = unsafe { std::slice::from_raw_parts(tokens, tokens_len) };
     let mask_slice = unsafe { std::slice::from_raw_parts(mask, mask_len) };
 
@@ -231,41 +276,73 @@ pub extern "C" fn fpga_infer(
 }
 
 /// Free inference result
+///
+/// # Safety
+///
+/// - `result` must be a valid pointer to an `FpgaInferenceResult`
+/// - The result must have been obtained from `fpga_infer`
+/// - This function may only be called once per result
+///
+/// # Memory Safety (ADR-0011 S-6)
+///
+/// This function safely deallocates memory using the same layout that was
+/// used during allocation in `fpga_infer`. The layout is reconstructed from
+/// the stored length fields to ensure correctness.
 #[no_mangle]
 pub extern "C" fn fpga_result_free(result: *mut FpgaInferenceResult) {
     if result.is_null() {
         return;
     }
 
+    // SAFETY: We've verified `result` is non-null.
+    // Caller guarantees this pointer came from `fpga_infer` and hasn't been freed.
     unsafe {
         let r = &mut *result;
 
+        // Free logits buffer
         if !r.logits.is_null() && r.logits_len > 0 {
-            std::alloc::dealloc(
-                r.logits as *mut u8,
-                std::alloc::Layout::array::<i16>(r.logits_len).unwrap(),
-            );
+            // SAFETY: This layout matches what was used in fpga_infer's allocation.
+            // We use expect() here because the layout was valid during allocation,
+            // so it must still be valid now (same length, same type).
+            // If this somehow fails, it indicates memory corruption.
+            if let Ok(layout) = std::alloc::Layout::array::<i16>(r.logits_len) {
+                // SAFETY: `r.logits` was allocated with this exact layout in `fpga_infer`.
+                // We have exclusive access through the mutable reference.
+                std::alloc::dealloc(r.logits as *mut u8, layout);
+            }
             r.logits = ptr::null_mut();
+            r.logits_len = 0;
         }
 
+        // Free top-K buffer
         if !r.topk.is_null() && r.topk_len > 0 {
-            std::alloc::dealloc(
-                r.topk as *mut u8,
-                std::alloc::Layout::array::<u32>(r.topk_len * 2).unwrap(),
-            );
+            // Note: topk buffer stores token+logit pairs, so actual length is topk_len * 2
+            if let Ok(layout) = std::alloc::Layout::array::<u32>(r.topk_len * 2) {
+                // SAFETY: `r.topk` was allocated with this exact layout in `fpga_infer`.
+                std::alloc::dealloc(r.topk as *mut u8, layout);
+            }
             r.topk = ptr::null_mut();
+            r.topk_len = 0;
         }
     }
 }
 
 /// Unload a model
+///
+/// # Safety
+///
+/// - `engine` must be a valid pointer from `fpga_engine_create`
+/// - `model_id` must point to exactly 32 bytes
 #[no_mangle]
 pub extern "C" fn fpga_unload(engine: *mut FpgaEngine, model_id: *const u8) -> FpgaResult {
     if engine.is_null() || model_id.is_null() {
         return FpgaResult::InvalidArgument;
     }
 
+    // SAFETY: Pointers verified non-null. Caller guarantees validity.
     let engine = unsafe { &mut *engine };
+
+    // SAFETY: `model_id` is non-null and points to 32 bytes per API contract.
     let id_slice = unsafe { std::slice::from_raw_parts(model_id, 32) };
     let mut id_bytes = [0u8; 32];
     id_bytes.copy_from_slice(id_slice);
@@ -278,13 +355,22 @@ pub extern "C" fn fpga_unload(engine: *mut FpgaEngine, model_id: *const u8) -> F
 }
 
 /// Check if a model is loaded
+///
+/// # Safety
+///
+/// - `engine` must be a valid pointer from `fpga_engine_create`
+/// - `model_id` must point to exactly 32 bytes
 #[no_mangle]
 pub extern "C" fn fpga_is_loaded(engine: *const FpgaEngine, model_id: *const u8) -> bool {
     if engine.is_null() || model_id.is_null() {
         return false;
     }
 
+    // SAFETY: Pointers verified non-null. Caller guarantees validity.
+    // Using shared reference since this is a read-only operation.
     let engine = unsafe { &*engine };
+
+    // SAFETY: `model_id` is non-null and points to 32 bytes per API contract.
     let id_slice = unsafe { std::slice::from_raw_parts(model_id, 32) };
     let mut id_bytes = [0u8; 32];
     id_bytes.copy_from_slice(id_slice);
