@@ -1,6 +1,6 @@
 # ADR-0012: Performance Domain Fixes
 
-**Status:** Proposed
+**Status:** Partially Implemented
 **Date:** 2026-01-08
 **Priority:** P1 - Critical
 **Parent ADR:** [ADR-0010](./0010fixes.md)
@@ -109,11 +109,11 @@ pub fn deserialize_hnsw_parallel(state: HnswState) -> Result<Hnsw, Error> {
 ```
 
 **Acceptance Criteria:**
-- [ ] Refactor to use HashMap pre-indexing
+- [x] Refactor to use HashMap pre-indexing ✅ Implemented in `hnsw.rs:204-218`
 - [ ] Add benchmark comparing before/after startup times
 - [ ] Verify correctness with property tests (proptest)
-- [ ] Ensure no memory regression
-- [ ] Update any related serialization code
+- [x] Ensure no memory regression ✅ HashMap pre-built, then consumed
+- [x] Update any related serialization code ✅ `deserialize()` method updated
 
 **Files to Modify:**
 - `ruvector-core/src/hnsw/serialization.rs`

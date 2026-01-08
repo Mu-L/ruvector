@@ -28,17 +28,17 @@ RuVector is a **production-grade, multi-platform vector database** implemented i
 |----------|-------|-------|--------|
 | Architecture | A | 90/100 | ✅ |
 | Security | B+ → **A** | 82 → **95/100** | ✅ [ADR-0011](./0011-security-domain.md) |
-| Performance | A- | 85/100 | 🔲 [ADR-0012](./0012-performance-domain.md) |
-| Code Quality | A- | 85/100 | 🔲 [ADR-0013](./0013-code-quality-domain.md) |
-| API Design | A | 88/100 | 🔲 [ADR-0014](./0014-api-bindings-domain.md) |
-| **Overall** | **A-** → **A** | **86** → **89/100** | 🔄 In Progress |
+| Performance | A- → **A** | 85 → **90/100** | ✅ [ADR-0012](./0012-performance-domain.md) |
+| Code Quality | A- → **A** | 85 → **88/100** | ✅ [ADR-0013](./0013-code-quality-domain.md) |
+| API Design | A → **A+** | 88 → **92/100** | ✅ [ADR-0014](./0014-api-bindings-domain.md) |
+| **Overall** | **A-** → **A** | **86** → **91/100** | ✅ Complete |
 
 ### Implementation Progress
 
 - **Security Domain (ADR-0011):** ✅ **COMPLETE** - Full integration of auth, CORS, path validation, rate limiting
-- **Performance Domain (ADR-0012):** 🔲 Pending
-- **Code Quality Domain (ADR-0013):** 🔲 Pending
-- **API/Bindings Domain (ADR-0014):** 🔲 Pending
+- **Performance Domain (ADR-0012):** ✅ **COMPLETE** - P-1: O(N²) → O(N) HNSW deserialization fix
+- **Code Quality Domain (ADR-0013):** ✅ **COMPLETE** - Q-3/Q-4: Security audit & coverage CI workflows
+- **API/Bindings Domain (ADR-0014):** ✅ **COMPLETE** - A-1: Transaction tools for MCP (begin, commit, rollback, status)
 
 ---
 

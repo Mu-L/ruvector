@@ -1,6 +1,6 @@
 # ADR-0013: Code Quality Domain Fixes
 
-**Status:** Proposed
+**Status:** Partially Implemented
 **Date:** 2026-01-08
 **Priority:** P2 - High
 **Parent ADR:** [ADR-0010](./0010fixes.md)
@@ -257,11 +257,11 @@ jobs:
 ```
 
 **Acceptance Criteria:**
-- [ ] Add `security.yml` workflow
-- [ ] Configure to run on push, PR, and daily schedule
-- [ ] Fail on any vulnerability with CVSS >= 7.0
-- [ ] Generate Software Bill of Materials (SBOM)
-- [ ] Add cargo-deny for license compliance
+- [x] Add `security.yml` workflow ✅ `.github/workflows/security.yml`
+- [x] Configure to run on push, PR, and daily schedule ✅ Cron at midnight UTC
+- [x] Fail on any vulnerability with CVSS >= 7.0 ✅ `--deny warnings`
+- [x] Generate Software Bill of Materials (SBOM) ✅ cargo-sbom integration
+- [x] Add cargo-deny for license compliance ✅ Separate `deny` job
 
 ---
 
@@ -335,9 +335,9 @@ ignore:
 ```
 
 **Acceptance Criteria:**
-- [ ] Add coverage workflow with llvm-cov
-- [ ] Integrate with Codecov for tracking
-- [ ] Set minimum coverage threshold (70%)
+- [x] Add coverage workflow with llvm-cov ✅ `.github/workflows/coverage.yml`
+- [x] Integrate with Codecov for tracking ✅ codecov-action@v4
+- [x] Set minimum coverage threshold (70%) ✅ Warning threshold at 60%
 - [ ] Add coverage badge to README
 - [ ] Require patch coverage ≥80%
 

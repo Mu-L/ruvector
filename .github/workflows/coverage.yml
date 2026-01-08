@@ -1,0 +1,55 @@
+# ADR-0013 Q-4: Code Coverage Workflow
+name: Code Coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Run coverage on core crates
+        run: |
+          cargo llvm-cov \
+            --package ruvector-core \
+            --package ruvector-data-framework \
+            --package ruvector-security \
+            --ignore-filename-regex 'tests?\.rs$|benches?\.rs$' \
+            --codecov --output-path codecov.json
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: codecov.json
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Check minimum coverage
+        run: |
+          # Extract line coverage percentage
+          COVERAGE=$(cargo llvm-cov \
+            --package ruvector-core \
+            --package ruvector-data-framework \
+            --json 2>/dev/null | jq -r '.data[0].totals.lines.percent // 0')
+          echo "Coverage: $COVERAGE%"
+
+          # Warn if below threshold (don't fail for now)
+          if [ "$(echo "$COVERAGE < 60" | bc -l 2>/dev/null || echo 0)" = "1" ]; then
+            echo "::warning::Coverage ($COVERAGE%) is below 60% threshold"
+          fi

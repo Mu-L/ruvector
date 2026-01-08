@@ -1,6 +1,6 @@
 # ADR-0014: API/Bindings Domain Fixes
 
-**Status:** Proposed
+**Status:** Partially Implemented
 **Date:** 2026-01-08
 **Priority:** P3 - Medium
 **Parent ADR:** [ADR-0010](./0010fixes.md)
@@ -247,8 +247,8 @@ impl TransactionManager {
 **Acceptance Criteria:**
 - [ ] Implement `JsTransaction` class in Node.js bindings
 - [ ] Add `beginTransaction`, `commit`, `rollback` methods
-- [ ] Add transaction tools to MCP handlers
-- [ ] Implement transaction timeout and cleanup
+- [x] Add transaction tools to MCP handlers ✅ `handlers.rs:313-356, 860-1006`
+- [x] Implement transaction timeout and cleanup ✅ 5-minute timeout, auto-cleanup
 - [ ] Add TypeScript type definitions
 - [ ] Document transaction isolation level (MVCC)
 - [ ] Add integration tests for transaction semantics

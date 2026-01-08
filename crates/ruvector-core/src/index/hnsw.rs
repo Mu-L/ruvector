@@ -201,13 +201,19 @@ impl HnswIndex {
         let id_to_idx: DashMap<VectorId, usize> = state.id_to_idx.into_iter().collect();
         let idx_to_id: DashMap<usize, VectorId> = state.idx_to_id.into_iter().collect();
 
-        // Insert vectors into HNSW in order
+        // P-1: O(N²) → O(N log N) optimization (ADR-0012)
+        // Build HashMap for O(1) vector lookups instead of O(N) linear scan
+        let vectors_by_id: std::collections::HashMap<VectorId, Vec<f32>> =
+            state.vectors.iter().cloned().collect();
+
+        // Insert vectors into HNSW in order - now O(N) total instead of O(N²)
         for entry in idx_to_id.iter() {
             let idx = *entry.key();
             let id = entry.value();
-            if let Some(vector) = state.vectors.iter().find(|(vid, _)| vid == id) {
+            // O(1) HashMap lookup instead of O(N) linear search
+            if let Some(vector) = vectors_by_id.get(id) {
                 // Use insert_data method with slice and idx
-                hnsw.insert_data(&vector.1, idx);
+                hnsw.insert_data(vector, idx);
             }
         }
 
