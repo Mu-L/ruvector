@@ -28,7 +28,7 @@ mod neural_analysis;
 
 pub use semiring::{Tropical, TropicalSemiring};
 pub use polynomial::{TropicalPolynomial, TropicalMonomial};
-pub use matrix::{TropicalMatrix, TropicalEigen};
+pub use matrix::{TropicalMatrix, TropicalEigen, MinPlusMatrix};
 pub use neural_analysis::{LinearRegionCounter, TropicalNeuralAnalysis};
 
 #[cfg(test)]

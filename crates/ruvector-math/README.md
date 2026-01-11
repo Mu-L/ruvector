@@ -6,6 +6,64 @@ Advanced Mathematics for Next-Generation Vector Search
 [![Documentation](https://docs.rs/ruvector-math/badge.svg)](https://docs.rs/ruvector-math)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+## What is ruvector-math?
+
+**ruvector-math** brings advanced mathematical tools to vector search and AI systems. Think of it as a Swiss Army knife for working with high-dimensional data, embeddings, and neural networks.
+
+### The Core Idea: Mincut as the Governance Signal
+
+All modules in this library connect through a single unifying concept: **mincut** (minimum cut). Mincut measures how "connected" a graph is - specifically, how much you'd need to cut to separate it into parts.
+
+In AI systems, mincut tells us:
+- **Low mincut (near 0)**: The system is stable - use fast, simple processing
+- **High mincut**: The system is changing - be cautious, use more careful methods
+- **Very high mincut**: Major shifts detected - pause and re-evaluate
+
+This "governance dial" lets AI systems automatically adjust their behavior based on the structure of the data they're processing.
+
+### Five Theoretical CS Modules
+
+1. **Tropical Algebra** - Piecewise linear math for neural networks
+   - Uses max/min instead of multiply/add
+   - Reveals the "skeleton" of how neural networks make decisions
+   - *Example*: Find the shortest path in a graph, or count linear regions in a ReLU network
+
+2. **Tensor Networks** - Compress high-dimensional data dramatically
+   - Break big tensors into chains of small ones
+   - *Example*: Store a 1000x1000x1000 tensor using only ~1% of the memory
+
+3. **Spectral Methods** - Work with graphs without expensive matrix operations
+   - Use Chebyshev polynomials to approximate filters
+   - *Example*: Smooth a signal on a social network graph, or cluster nodes
+
+4. **Persistent Homology (TDA)** - Find shapes in data that persist across scales
+   - Track holes, loops, and voids as you zoom in/out
+   - *Example*: Detect when data is drifting by watching for topological changes
+
+5. **Polynomial Optimization** - Prove mathematical facts about polynomials
+   - Check if a function is always non-negative
+   - *Example*: Verify that a neural network's output is bounded
+
+### How They Work Together
+
+```
+                    ┌─────────────────────────────────────┐
+                    │     MINCUT (Stoer-Wagner)          │
+                    │    "Is the system stable?"          │
+                    └──────────────┬──────────────────────┘
+                                   │
+          ┌────────────────────────┼────────────────────────┐
+          │                        │                        │
+          ▼                        ▼                        ▼
+   λ ≈ 0 (Stable)          λ moderate              λ high (Drift)
+   ┌──────────────┐      ┌──────────────┐       ┌──────────────┐
+   │ Fast Path    │      │ Cautious     │       │ Freeze       │
+   │ SSM backbone │      │ Governed ATT │       │ Re-evaluate  │
+   │ Tropical     │      │ Spectral     │       │ TDA detect   │
+   │ analysis     │      │ filtering    │       │ boundaries   │
+   └──────────────┘      └──────────────┘       └──────────────┘
+```
+
 ## Overview
 
 `ruvector-math` provides production-grade implementations of advanced mathematical algorithms that differentiate RuVector from traditional vector databases:

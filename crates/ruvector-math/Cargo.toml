@@ -44,3 +44,11 @@ harness = false
 [[bench]]
 name = "product_manifold"
 harness = false
+
+[[bench]]
+name = "tropical"
+harness = false
+
+[[bench]]
+name = "spectral"
+harness = false
