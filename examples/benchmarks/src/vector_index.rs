@@ -9,30 +9,41 @@
 use anyhow::{anyhow, Result};
 use rand::seq::SliceRandom;
 use rand::Rng;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Unique identifier for vectors in the index
 pub type VectorId = u64;
 
-/// Dense vector representation with basic operations
+/// Dense vector representation with basic operations and cached norm
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DenseVec {
     pub values: Vec<f32>,
+    /// Cached L2 norm (computed lazily)
+    #[serde(skip, default)]
+    cached_norm: Option<f32>,
 }
 
 impl DenseVec {
     /// Create a new dense vector from values
     pub fn new(values: Vec<f32>) -> Self {
-        Self { values }
+        Self { values, cached_norm: None }
+    }
+
+    /// Create a new dense vector with precomputed norm
+    pub fn with_norm(values: Vec<f32>, norm: f32) -> Self {
+        Self { values, cached_norm: Some(norm) }
     }
 
     /// Create a zero vector of given dimension
     pub fn zeros(dim: usize) -> Self {
         Self {
             values: vec![0.0; dim],
+            cached_norm: Some(0.0),
         }
     }
 
@@ -41,7 +52,15 @@ impl DenseVec {
         let mut rng = rand::thread_rng();
         Self {
             values: (0..dim).map(|_| rng.gen::<f32>()).collect(),
+            cached_norm: None,
         }
+    }
+
+    /// Create a random normalized vector
+    pub fn random_normalized(dim: usize) -> Self {
+        let mut v = Self::random(dim);
+        v.normalize();
+        v
     }
 
     /// Get vector dimensionality
@@ -49,8 +68,13 @@ impl DenseVec {
         self.values.len()
     }
 
-    /// Compute L2 norm (SIMD-optimized)
+    /// Compute L2 norm (SIMD-optimized with caching)
     pub fn l2_norm(&self) -> f32 {
+        // Return cached norm if available
+        if let Some(norm) = self.cached_norm {
+            return norm;
+        }
+
         let n = self.values.len();
         let chunks = n / 4;
 
@@ -74,6 +98,17 @@ impl DenseVec {
         }
 
         s.sqrt()
+    }
+
+    /// Compute and cache L2 norm
+    pub fn compute_norm(&mut self) -> f32 {
+        if self.cached_norm.is_none() {
+            let norm = self.l2_norm();
+            self.cached_norm = Some(norm);
+            norm
+        } else {
+            self.cached_norm.unwrap()
+        }
     }
 
     /// Compute dot product with another vector (SIMD-optimized for 4-wide chunks)
@@ -123,7 +158,7 @@ impl DenseVec {
         Ok(d / (a * b))
     }
 
-    /// Add scaled vector to self
+    /// Add scaled vector to self (invalidates norm cache)
     pub fn add_scaled(&mut self, other: &DenseVec, scale: f32) -> Result<()> {
         if self.dim() != other.dim() {
             return Err(anyhow!(
@@ -135,22 +170,35 @@ impl DenseVec {
         for i in 0..self.values.len() {
             self.values[i] += other.values[i] * scale;
         }
+        self.cached_norm = None; // Invalidate cache
         Ok(())
     }
 
-    /// Scale vector by scalar
+    /// Scale vector by scalar (invalidates norm cache)
     pub fn scale(&mut self, s: f32) {
         for v in &mut self.values {
             *v *= s;
         }
+        // Update cached norm if it exists
+        if let Some(norm) = self.cached_norm {
+            self.cached_norm = Some(norm * s.abs());
+        }
     }
 
-    /// Normalize to unit length
+    /// Normalize to unit length (caches norm as 1.0)
     pub fn normalize(&mut self) {
         let norm = self.l2_norm();
         if norm > 0.0 {
-            self.scale(1.0 / norm);
+            for v in &mut self.values {
+                *v /= norm;
+            }
+            self.cached_norm = Some(1.0);
         }
+    }
+
+    /// Invalidate the cached norm (call after modifying values directly)
+    pub fn invalidate_cache(&mut self) {
+        self.cached_norm = None;
     }
 }
 
@@ -534,6 +582,139 @@ impl VectorIndex {
         }
         best.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
         Ok(best)
+    }
+
+    /// Parallel batch search for multiple queries
+    ///
+    /// Processes multiple queries in parallel using rayon
+    pub fn search_batch(
+        &self,
+        queries: &[DenseVec],
+        top_k: usize,
+        coherence_score: f32,
+    ) -> Vec<Result<Vec<ScoredId>>> {
+        queries
+            .par_iter()
+            .map(|q| self.search(q, top_k, coherence_score))
+            .collect()
+    }
+
+    /// Parallel flat search using rayon
+    fn search_flat_parallel(&self, q: &DenseVec, top_k: usize) -> Result<Vec<ScoredId>> {
+        // Collect active vectors
+        let active: Vec<(VectorId, &DenseVec)> = self
+            .vectors
+            .iter()
+            .filter(|(id, _)| !self.deleted.contains(id))
+            .map(|(id, v)| (*id, v))
+            .collect();
+
+        // Parallel scoring
+        let mut scores: Vec<ScoredId> = active
+            .par_iter()
+            .filter_map(|(id, v)| {
+                q.cosine(v).ok().map(|s| ScoredId::new(*id, s))
+            })
+            .collect();
+
+        // Sort and truncate
+        scores.par_sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scores.truncate(top_k);
+        Ok(scores)
+    }
+
+    /// Search with adaptive probe count based on query difficulty
+    pub fn search_adaptive(
+        &self,
+        q: &DenseVec,
+        top_k: usize,
+        coherence_score: f32,
+        min_candidates: usize,
+    ) -> Result<Vec<ScoredId>> {
+        if q.dim() != self.dim {
+            return Err(anyhow!(
+                "dimension mismatch: expected {}, got {}",
+                self.dim,
+                q.dim()
+            ));
+        }
+
+        if !self.gate.allow(coherence_score) {
+            return Ok(Vec::new());
+        }
+
+        if top_k == 0 {
+            return Ok(Vec::new());
+        }
+
+        // Use adaptive IVF search if available
+        if self.ivf.enabled {
+            if let Some(state) = &self.ivf_state {
+                return self.search_ivf_adaptive(q, top_k, state, min_candidates);
+            }
+        }
+
+        // Large indices benefit from parallel search
+        if self.len() > 1000 {
+            return self.search_flat_parallel(q, top_k);
+        }
+
+        self.search_flat(q, top_k)
+    }
+
+    /// IVF search with adaptive probe count
+    fn search_ivf_adaptive(
+        &self,
+        q: &DenseVec,
+        top_k: usize,
+        state: &IvfState,
+        min_candidates: usize,
+    ) -> Result<Vec<ScoredId>> {
+        if state.centroids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Score all centroids
+        let mut centroid_scores: Vec<(usize, f32)> = Vec::with_capacity(state.centroids.len());
+        for i in 0..state.centroids.len() {
+            let s = q.cosine(&state.centroids[i])?;
+            centroid_scores.push((i, s));
+        }
+        centroid_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Adaptive probing: probe until we have enough candidates
+        let mut candidates: Vec<VectorId> = Vec::new();
+        let mut probed = 0;
+
+        for (c, _) in &centroid_scores {
+            for id in &state.lists[*c] {
+                if !self.deleted.contains(id) {
+                    candidates.push(*id);
+                }
+            }
+            probed += 1;
+
+            // Stop if we have enough candidates
+            if candidates.len() >= min_candidates.max(top_k * 10) {
+                break;
+            }
+        }
+
+        // Parallel scoring of candidates
+        let best: Vec<ScoredId> = candidates
+            .par_iter()
+            .filter_map(|id| {
+                self.vectors.get(id).and_then(|v| {
+                    q.cosine(v).ok().map(|s| ScoredId::new(*id, s))
+                })
+            })
+            .collect();
+
+        // Sort and truncate
+        let mut sorted = best;
+        sorted.par_sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        sorted.truncate(top_k);
+        Ok(sorted)
     }
 
     /// Save index to file
