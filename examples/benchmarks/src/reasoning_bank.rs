@@ -220,6 +220,12 @@ pub struct ReasoningBank {
     pub calibration: CalibrationData,
     /// Current best strategy by difficulty
     pub best_strategies: HashMap<u8, String>,
+    /// Pattern index for O(1) lookups: (constraint_type, difficulty) -> pattern_idx
+    #[serde(skip)]
+    pattern_index: HashMap<(String, u8), usize>,
+    /// Constraint type frequency for prioritization
+    #[serde(skip)]
+    constraint_frequency: HashMap<String, usize>,
 }
 
 /// Statistics for a strategy
@@ -300,25 +306,33 @@ impl ReasoningBank {
         };
 
         for constraint_type in &trajectory.constraint_types {
+            // Update constraint frequency
+            *self.constraint_frequency.entry(constraint_type.clone()).or_insert(0) += 1;
+
             let patterns = self.patterns
                 .entry(constraint_type.clone())
                 .or_default();
 
             // Find or create pattern
-            let pattern = patterns.iter_mut().find(|p| {
+            let pattern_idx = patterns.iter().position(|p| {
                 p.best_strategy == attempt.strategy
                     && trajectory.difficulty >= p.difficulty_range.0
                     && trajectory.difficulty <= p.difficulty_range.1
             });
 
-            if let Some(p) = pattern {
+            if let Some(idx) = pattern_idx {
                 // Update existing pattern
+                let p = &mut patterns[idx];
                 let n = p.observations as f64;
                 p.success_rate = (p.success_rate * n + 1.0) / (n + 1.0);
                 p.avg_steps = (p.avg_steps * n + attempt.steps as f64) / (n + 1.0);
                 p.observations += 1;
+
+                // Update pattern index for fast lookup
+                self.pattern_index.insert((constraint_type.clone(), trajectory.difficulty), idx);
             } else {
                 // Create new pattern
+                let new_idx = patterns.len();
                 patterns.push(LearnedPattern {
                     constraint_type: constraint_type.clone(),
                     difficulty_range: (
@@ -330,7 +344,19 @@ impl ReasoningBank {
                     avg_steps: attempt.steps as f64,
                     observations: 1,
                 });
+
+                // Index the new pattern
+                for d in trajectory.difficulty.saturating_sub(2)..=trajectory.difficulty.saturating_add(2) {
+                    self.pattern_index.insert((constraint_type.clone(), d), new_idx);
+                }
             }
+        }
+    }
+
+    /// Record multiple trajectories in batch (for parallel processing)
+    pub fn record_trajectories_batch(&mut self, trajectories: Vec<Trajectory>) {
+        for trajectory in trajectories {
+            self.record_trajectory(trajectory);
         }
     }
 
@@ -353,9 +379,22 @@ impl ReasoningBank {
         }
     }
 
-    /// Get recommended strategy for a puzzle
+    /// Get recommended strategy for a puzzle (optimized with index)
     pub fn get_strategy(&self, difficulty: u8, constraint_types: &[String]) -> Strategy {
-        // Check for learned patterns first
+        // Fast path: check pattern index first for O(1) lookup
+        for ct in constraint_types {
+            if let Some(&idx) = self.pattern_index.get(&(ct.clone(), difficulty)) {
+                if let Some(patterns) = self.patterns.get(ct) {
+                    if let Some(pattern) = patterns.get(idx) {
+                        if pattern.success_rate > 0.7 && pattern.observations >= 3 {
+                            return self.strategy_from_name(&pattern.best_strategy, difficulty);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Slow path: linear search for patterns
         for ct in constraint_types {
             if let Some(patterns) = self.patterns.get(ct) {
                 // Find best pattern for this difficulty

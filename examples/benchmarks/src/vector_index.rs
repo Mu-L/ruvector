@@ -662,8 +662,84 @@ impl VectorIndex {
         self.search_flat(q, top_k)
     }
 
-    /// IVF search with adaptive probe count
+    /// IVF search with adaptive probe count (SIMD-optimized centroid scoring)
     fn search_ivf_adaptive(
+        &self,
+        q: &DenseVec,
+        top_k: usize,
+        state: &IvfState,
+        min_candidates: usize,
+    ) -> Result<Vec<ScoredId>> {
+        if state.centroids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // SIMD-optimized centroid scoring using parallel iterator
+        let centroid_scores: Vec<(usize, f32)> = state.centroids
+            .par_iter()
+            .enumerate()
+            .filter_map(|(i, c)| {
+                q.cosine(c).ok().map(|score| (i, score))
+            })
+            .collect();
+
+        // Sort by score descending
+        let mut sorted_scores = centroid_scores;
+        sorted_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Adaptive probe count: start with default, increase if needed
+        let initial_probes = self.ivf.probes.min(sorted_scores.len());
+        let max_probes = sorted_scores.len().min(initial_probes * 2);
+
+        let mut all_candidates: Vec<ScoredId> = Vec::new();
+        let mut _probed = 0;
+
+        // First pass with initial probes
+        for &(cluster_idx, _) in sorted_scores.iter().take(initial_probes) {
+            if cluster_idx < state.lists.len() {
+                for &id in &state.lists[cluster_idx] {
+                    if !self.deleted.contains(&id) {
+                        if let Some(v) = self.vectors.get(&id) {
+                            if let Ok(score) = q.cosine(v) {
+                                all_candidates.push(ScoredId::new(id, score));
+                            }
+                        }
+                    }
+                }
+            }
+            _probed += 1;
+        }
+
+        // If not enough candidates, probe more clusters
+        if all_candidates.len() < min_candidates && _probed < max_probes {
+            for &(cluster_idx, _) in sorted_scores.iter().skip(initial_probes).take(max_probes - initial_probes) {
+                if cluster_idx < state.lists.len() {
+                    for &id in &state.lists[cluster_idx] {
+                        if !self.deleted.contains(&id) {
+                            if let Some(v) = self.vectors.get(&id) {
+                                if let Ok(score) = q.cosine(v) {
+                                    all_candidates.push(ScoredId::new(id, score));
+                                }
+                            }
+                        }
+                    }
+                }
+                _probed += 1;
+                if all_candidates.len() >= min_candidates {
+                    break;
+                }
+            }
+        }
+
+        // Sort and return top-k
+        all_candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        all_candidates.truncate(top_k);
+        Ok(all_candidates)
+    }
+
+    /// Original IVF search (kept for compatibility)
+    #[allow(dead_code)]
+    fn search_ivf_adaptive_original(
         &self,
         q: &DenseVec,
         top_k: usize,
