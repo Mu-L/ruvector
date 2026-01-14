@@ -439,14 +439,44 @@ impl IntelligenceCalculator {
             / raw.episodes.len() as f64;
 
         // Regret sublinearity: check if cumulative regret grows sublinearly
+        // True sublinearity means R_k/k → 0 as k → ∞ (regret per episode decreasing)
         if raw.episodes.len() >= 5 {
-            let last = raw.episodes.last().unwrap();
-            let avg_regret = last.cumulative_regret / raw.episodes.len() as f64;
+            // Calculate regret trend using linear regression
+            let n = raw.episodes.len() as f64;
+            let mut sum_x = 0.0;
+            let mut sum_y = 0.0;
+            let mut sum_xy = 0.0;
+            let mut sum_xx = 0.0;
 
-            // Sublinear if average regret < initial regret
-            let initial_regret = raw.episodes[0].regret;
-            if initial_regret > 0.0 {
-                learning.regret_sublinearity = (1.0 - avg_regret / initial_regret).max(0.0);
+            for (i, ep) in raw.episodes.iter().enumerate() {
+                let x = (i + 1) as f64;
+                let y = ep.regret;
+                sum_x += x;
+                sum_y += y;
+                sum_xy += x * y;
+                sum_xx += x * x;
+            }
+
+            let slope = (n * sum_xy - sum_x * sum_y) / (n * sum_xx - sum_x * sum_x);
+
+            // Negative slope = decreasing regret = sublinear
+            // Transform: slope < 0 → sublinearity > 0
+            if slope < 0.0 {
+                // Stronger negative slope = better sublinearity (cap at 1.0)
+                learning.regret_sublinearity = (-slope / 10.0).min(1.0);
+            }
+
+            // Also check cumulative average
+            let last = raw.episodes.last().unwrap();
+            let avg_regret = last.cumulative_regret / n;
+            let first_half_avg = raw.episodes.iter()
+                .take(raw.episodes.len() / 2)
+                .map(|e| e.regret)
+                .sum::<f64>() / (n / 2.0);
+
+            // If second half has lower per-episode regret, that's sublinear
+            if avg_regret < first_half_avg && learning.regret_sublinearity == 0.0 {
+                learning.regret_sublinearity = ((first_half_avg - avg_regret) / first_half_avg).max(0.0);
             }
         }
 
