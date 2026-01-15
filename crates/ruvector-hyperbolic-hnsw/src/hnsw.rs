@@ -11,8 +11,8 @@
 //! - Dual-space search (Euclidean fallback)
 
 use crate::error::{HyperbolicError, HyperbolicResult};
-use crate::poincare::{poincare_distance, project_to_ball, PoincareConfig, EPS};
-use crate::tangent::{TangentCache, TangentPruner};
+use crate::poincare::{fused_norms, norm_squared, poincare_distance, poincare_distance_from_norms, project_to_ball, EPS};
+use crate::tangent::TangentCache;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "parallel")]
@@ -170,37 +170,50 @@ impl HyperbolicHnsw {
         self.nodes.first().map(|n| n.vector.len())
     }
 
-    /// Compute distance between two vectors
+    /// Compute distance between two vectors (optimized with fused norms)
     #[inline]
     fn distance(&self, a: &[f32], b: &[f32]) -> f32 {
         match self.config.metric {
             DistanceMetric::Poincare | DistanceMetric::Hybrid => {
-                poincare_distance(a, b, self.config.curvature)
+                // Use fused_norms for single-pass computation
+                let (diff_sq, norm_a_sq, norm_b_sq) = fused_norms(a, b);
+                poincare_distance_from_norms(diff_sq, norm_a_sq, norm_b_sq, self.config.curvature)
             }
             DistanceMetric::Euclidean => {
-                a.iter()
-                    .zip(b.iter())
-                    .map(|(&x, &y)| (x - y) * (x - y))
-                    .sum::<f32>()
-                    .sqrt()
+                let (diff_sq, _, _) = fused_norms(a, b);
+                diff_sq.sqrt()
             }
             DistanceMetric::Cosine => {
-                let dot: f32 = a.iter().zip(b.iter()).map(|(&x, &y)| x * y).sum();
-                let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-                let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-                1.0 - dot / (norm_a * norm_b + EPS)
+                let len = a.len().min(b.len());
+                let mut dot_ab = 0.0f32;
+                let mut norm_a_sq = 0.0f32;
+                let mut norm_b_sq = 0.0f32;
+
+                // Fused computation
+                for i in 0..len {
+                    let ai = a[i];
+                    let bi = b[i];
+                    dot_ab += ai * bi;
+                    norm_a_sq += ai * ai;
+                    norm_b_sq += bi * bi;
+                }
+
+                let norm_prod = (norm_a_sq * norm_b_sq).sqrt();
+                1.0 - dot_ab / (norm_prod + EPS)
             }
         }
     }
 
-    /// Compute Euclidean distance (for hybrid mode pruning)
+    /// Compute distance with pre-computed query norm (for batch search)
     #[inline]
-    fn euclidean_distance(&self, a: &[f32], b: &[f32]) -> f32 {
-        a.iter()
-            .zip(b.iter())
-            .map(|(&x, &y)| (x - y) * (x - y))
-            .sum::<f32>()
-            .sqrt()
+    fn distance_with_query_norm(&self, query: &[f32], query_norm_sq: f32, point: &[f32]) -> f32 {
+        match self.config.metric {
+            DistanceMetric::Poincare | DistanceMetric::Hybrid => {
+                let (diff_sq, _, point_norm_sq) = fused_norms(query, point);
+                poincare_distance_from_norms(diff_sq, query_norm_sq, point_norm_sq, self.config.curvature)
+            }
+            _ => self.distance(query, point)
+        }
     }
 
     /// Generate random level for a new node

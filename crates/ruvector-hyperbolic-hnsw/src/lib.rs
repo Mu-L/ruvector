@@ -136,9 +136,11 @@ pub use hnsw::{
     DistanceMetric, DualSpaceIndex, HnswNode, HyperbolicHnsw, HyperbolicHnswConfig, SearchResult,
 };
 pub use poincare::{
-    conformal_factor, exp_map, frechet_mean, hyperbolic_midpoint, log_map, log_map_at_centroid,
-    mobius_add, mobius_scalar_mult, norm, norm_squared, parallel_transport, poincare_distance,
-    poincare_distance_squared, project_to_ball, PoincareConfig, DEFAULT_CURVATURE, EPS,
+    conformal_factor, conformal_factor_from_norm_sq, dot, exp_map, frechet_mean, fused_norms,
+    hyperbolic_midpoint, log_map, log_map_at_centroid, mobius_add, mobius_add_inplace,
+    mobius_scalar_mult, norm, norm_squared, parallel_transport, poincare_distance,
+    poincare_distance_batch, poincare_distance_from_norms, poincare_distance_squared,
+    project_to_ball, project_to_ball_inplace, PoincareConfig, DEFAULT_CURVATURE, EPS,
 };
 pub use shard::{
     CurvatureRegistry, HierarchyMetrics, HyperbolicShard, ShardCurvature, ShardStrategy,
