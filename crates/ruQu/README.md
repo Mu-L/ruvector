@@ -27,6 +27,56 @@
 
 ---
 
+## What is ruQu?
+
+**ruQu** (pronounced "roo-cue") is a Rust library that lets quantum computers know when it's safe to act.
+
+### The Problem
+
+Quantum computers make errors constantly. Error correction codes (like surface codes) can fix these errors, but:
+
+1. **Some error patterns are dangerous** — correlated errors that span the whole chip can cause logical failures
+2. **Decoders are blind to structure** — they correct errors without knowing if the underlying graph is healthy
+3. **Crashes are expensive** — a logical failure means starting over completely
+
+### The Solution
+
+ruQu monitors the **structure** of error patterns using graph min-cut analysis:
+
+```
+Syndrome Stream → [Min-Cut Analysis] → PERMIT / DEFER / DENY
+                        ↓
+                  "Is the error pattern
+                   structurally safe?"
+```
+
+- **PERMIT**: Errors are scattered, safe to continue
+- **DEFER**: Uncertainty, proceed with caution
+- **DENY**: Correlated errors detected, quarantine this region
+
+### Real-World Analogy
+
+| Your Body | ruQu for Quantum |
+|-----------|------------------|
+| Nerves detect damage before you consciously notice | ruQu detects correlated errors before logical failures |
+| Reflexes pull your hand away from heat automatically | ruQu quarantines fragile regions before they corrupt data |
+| You can still walk even with a sprained ankle | Quantum computer keeps running even with damaged qubits |
+
+### Why This Matters
+
+**Without ruQu**: Quantum computer runs until logical failure → full reset → lose all progress.
+
+**With ruQu**: Quantum computer detects trouble early → isolates problem region → healthy parts keep running.
+
+Think of it like a car dashboard:
+
+- **Speedometer**: How much computational load can I safely handle?
+- **Engine temperature**: Which qubit regions are showing stress?
+- **Check engine light**: Early warning before logical failure
+- **Limp mode**: Reduced capacity is better than complete failure
+
+---
+
 **Created by [ruv.io](https://ruv.io) — Building the future of quantum computing infrastructure**
 
 **Part of the [RuVector](https://github.com/ruvnet/ruvector) quantum computing toolkit**
@@ -48,7 +98,8 @@ cargo run -p ruqu --bin ruqu_demo --release -- --distance 5 --rounds 1000 --erro
 # Output: Latency histogram, throughput, decision breakdown
 ```
 
-**What you'll see:**
+<details>
+<summary><strong>📊 Example Output</strong></summary>
 
 ```
 ╔═══════════════════════════════════════════════════════════════════╗
@@ -74,11 +125,89 @@ cargo run -p ruqu --bin ruqu_demo --release -- --distance 3 --rounds 200 --error
 
 **Metrics file generated:** `ruqu_metrics.json` with full histogram data for analysis.
 
+</details>
+
+---
+
+## Key Capabilities
+
+### ✅ What ruQu Does
+
+| Capability | Description | Latency |
+|------------|-------------|---------|
+| **Coherence Gating** | Decide if system is safe enough to act | <4μs |
+| **Early Warning** | Detect correlated failures 100+ cycles ahead | Real-time |
+| **Region Isolation** | Quarantine failing areas, keep rest running | <10μs |
+| **Cryptographic Audit** | Blake3 hash chain of every decision | Tamper-evident |
+| **Adaptive Control** | Switch decoder modes based on conditions | Per-cycle |
+
+### ❌ What ruQu Does NOT Do
+
+- **Not a decoder**: ruQu doesn't correct errors — it tells decoders when/where it's safe to act
+- **Not a simulator**: ruQu processes real syndrome data, it doesn't simulate quantum systems
+- **Not calibration**: ruQu doesn't tune qubit parameters — it tells calibration systems when to run
+
+---
+
+## Quick Start
+
+<details>
+<summary><strong>📦 Installation</strong></summary>
+
+```toml
+[dependencies]
+ruqu = "0.1"
+
+# Enable all features for full capability
+ruqu = { version = "0.1", features = ["full"] }
+```
+
+### Feature Flags
+
+| Feature | What it enables | When to use |
+|---------|----------------|-------------|
+| `structural` | Real O(n^{o(1)}) min-cut algorithm | **Default** - always recommended |
+| `decoder` | Fusion-blossom MWPM decoder | Surface code error correction |
+| `attention` | 50% FLOPs reduction via coherence routing | High-throughput systems |
+| `simd` | AVX2 vectorized bitmap operations | x86_64 performance |
+| `full` | All features enabled | Production deployments |
+
+</details>
+
+<details>
+<summary><strong>🚀 Basic Usage</strong></summary>
+
+```rust
+use ruqu::{QuantumFabric, FabricBuilder, GateDecision};
+
+fn main() -> Result<(), ruqu::RuQuError> {
+    // Build a fabric with 256 tiles
+    let mut fabric = FabricBuilder::new()
+        .num_tiles(256)
+        .syndrome_buffer_depth(1024)
+        .build()?;
+
+    // Process a syndrome cycle
+    let syndrome_data = [0u8; 64]; // From hardware
+    let decision = fabric.process_cycle(&syndrome_data)?;
+
+    match decision {
+        GateDecision::Permit => println!("✅ Safe to proceed"),
+        GateDecision::Defer => println!("⚠️ Proceed with caution"),
+        GateDecision::Deny => println!("🛑 Region unsafe, quarantine"),
+    }
+
+    Ok(())
+}
+```
+
+</details>
+
 ---
 
 ## What's New (v0.2.0)
 
-<details open>
+<details>
 <summary><strong>🚀 January 2026 Updates - Major Feature Release</strong></summary>
 
 ### New Modules
@@ -172,126 +301,6 @@ Scaling Across Code Distances:
 ```
 
 </details>
-
----
-
-## What is ruQu?
-
-**ruQu** (pronounced "roo-cue") is a Rust library that lets quantum computers know when it's safe to act.
-
-### The Problem
-
-Quantum computers make errors constantly. Error correction codes (like surface codes) can fix these errors, but:
-
-1. **Some error patterns are dangerous** — correlated errors that span the whole chip can cause logical failures
-2. **Decoders are blind to structure** — they correct errors without knowing if the underlying graph is healthy
-3. **Crashes are expensive** — a logical failure means starting over completely
-
-### The Solution
-
-ruQu monitors the **structure** of error patterns using graph min-cut analysis:
-
-```
-Syndrome Stream → [Min-Cut Analysis] → PERMIT / DEFER / DENY
-                        ↓
-                  "Is the error pattern
-                   structurally safe?"
-```
-
-- **PERMIT**: Errors are scattered, safe to continue
-- **DEFER**: Uncertainty, proceed with caution
-- **DENY**: Correlated errors detected, quarantine this region
-
-### Real-World Analogy
-
-| Your Body | ruQu for Quantum |
-|-----------|------------------|
-| Nerves detect damage before you consciously notice | ruQu detects correlated errors before logical failures |
-| Reflexes pull your hand away from heat automatically | ruQu quarantines fragile regions before they corrupt data |
-| You can still walk even with a sprained ankle | Quantum computer keeps running even with damaged qubits |
-
-### Why This Matters
-
-**Without ruQu**: Quantum computer runs until logical failure → full reset → lose all progress.
-
-**With ruQu**: Quantum computer detects trouble early → isolates problem region → healthy parts keep running.
-
-Think of it like a car dashboard:
-
-- **Speedometer**: How much computational load can I safely handle?
-- **Engine temperature**: Which qubit regions are showing stress?
-- **Check engine light**: Early warning before logical failure
-- **Limp mode**: Reduced capacity is better than complete failure
-
----
-
-## Key Capabilities
-
-### ✅ What ruQu Does
-
-| Capability | Description | Latency |
-|------------|-------------|---------|
-| **Coherence Gating** | Decide if system is safe enough to act | <4μs |
-| **Early Warning** | Detect correlated failures 100+ cycles ahead | Real-time |
-| **Region Isolation** | Quarantine failing areas, keep rest running | <10μs |
-| **Cryptographic Audit** | Blake3 hash chain of every decision | Tamper-evident |
-| **Adaptive Control** | Switch decoder modes based on conditions | Per-cycle |
-
-### ❌ What ruQu Does NOT Do
-
-- **Not a decoder**: ruQu doesn't correct errors — it tells decoders when/where it's safe to act
-- **Not a simulator**: ruQu processes real syndrome data, it doesn't simulate quantum systems
-- **Not calibration**: ruQu doesn't tune qubit parameters — it tells calibration systems when to run
-
----
-
-## Quick Start
-
-### Installation
-
-```toml
-[dependencies]
-ruqu = "0.1"
-
-# Enable all features for full capability
-ruqu = { version = "0.1", features = ["full"] }
-```
-
-### Feature Flags
-
-| Feature | What it enables | When to use |
-|---------|----------------|-------------|
-| `structural` | Real O(n^{o(1)}) min-cut algorithm | **Default** - always recommended |
-| `decoder` | Fusion-blossom MWPM decoder | Surface code error correction |
-| `attention` | 50% FLOPs reduction via coherence routing | High-throughput systems |
-| `simd` | AVX2 vectorized bitmap operations | x86_64 performance |
-| `full` | All features enabled | Production deployments |
-
-### Basic Usage
-
-```rust
-use ruqu::{QuantumFabric, FabricBuilder, GateDecision};
-
-fn main() -> Result<(), ruqu::RuQuError> {
-    // Build a fabric with 256 tiles
-    let mut fabric = FabricBuilder::new()
-        .num_tiles(256)
-        .syndrome_buffer_depth(1024)
-        .build()?;
-
-    // Process a syndrome cycle
-    let syndrome_data = [0u8; 64]; // From hardware
-    let decision = fabric.process_cycle(&syndrome_data)?;
-
-    match decision {
-        GateDecision::Permit => println!("✅ Safe to proceed"),
-        GateDecision::Defer => println!("⚠️ Proceed with caution"),
-        GateDecision::Deny => println!("🛑 Region unsafe, quarantine"),
-    }
-
-    Ok(())
-}
-```
 
 ---
 
@@ -1148,6 +1157,9 @@ impl ReceiptLog {
 
 ## Security
 
+<details>
+<summary><strong>🔒 Security Implementation</strong></summary>
+
 ruQu implements cryptographic security for all critical operations:
 
 | Component | Algorithm | Purpose |
@@ -1165,11 +1177,14 @@ ruQu implements cryptographic security for all critical operations:
 
 See [SECURITY-REVIEW.md](docs/SECURITY-REVIEW.md) for details.
 
+</details>
+
 ---
 
 ## Performance
 
-### Benchmarks
+<details>
+<summary><strong>📊 Benchmarks</strong></summary>
 
 Run the benchmark suite:
 
@@ -1208,9 +1223,14 @@ Results:
 - Throughput: 3,839,921 syndromes/sec
 ```
 
+</details>
+
 ---
 
 ## References
+
+<details>
+<summary><strong>📚 Documentation & Resources</strong></summary>
 
 ### ruv.io Resources
 
@@ -1231,6 +1251,8 @@ Results:
 - [Google Quantum AI. "Quantum error correction below the surface code threshold." Nature, 2024](https://www.nature.com/articles/s41586-024-08449-y) — Context for QEC research
 - [Riverlane. "Collision Clustering Decoder." Nature Communications, 2025](https://www.nature.com/articles/s41467-024-54738-z) — Complementary decoder technology
 - [Stim: High-performance Quantum Error Correction Simulator](https://github.com/quantumlib/Stim) — Syndrome generation tool
+
+</details>
 
 ---
 
