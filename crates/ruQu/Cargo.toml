@@ -12,14 +12,18 @@ keywords = ["quantum", "coherence", "gate", "min-cut", "error-correction"]
 categories = ["science", "algorithms", "hardware-support"]
 
 [dependencies]
-# RuVector dependencies
-ruvector-mincut = { path = "../ruvector-mincut", optional = true }
+# RuVector dependencies - Real implementations
+ruvector-mincut = { path = "../ruvector-mincut", optional = true, features = ["exact"] }
 cognitum-gate-tilezero = { path = "../cognitum-gate-tilezero", optional = true }
 
 # Cryptography
 blake3 = "1.5"
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
 subtle = "2.5"  # Constant-time operations
+rand = { workspace = true }  # For key generation
+
+# Graph algorithms
+petgraph = "0.6"  # For graph operations
 
 # Async runtime
 tokio = { workspace = true }
@@ -63,6 +67,10 @@ harness = false
 
 [[bench]]
 name = "memory_bench"
+harness = false
+
+[[bench]]
+name = "mincut_bench"
 harness = false
 
 [features]

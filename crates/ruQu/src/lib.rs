@@ -15,7 +15,7 @@
 //!
 //! The system uses a two-layer classical control approach:
 //! 1. **RuVector Memory Layer**: Pattern recognition and historical mitigation retrieval
-//! 2. **Dynamic Min-Cut Gate**: Real-time structural coherence assessment
+//! 2. **Dynamic Min-Cut Gate**: Real El-Hayek/Henzinger/Li O(n^{o(1)}) algorithm
 //!
 //! ## Quick Start
 //!
@@ -81,6 +81,7 @@
 pub mod error;
 pub mod fabric;
 pub mod filters;
+pub mod mincut;
 pub mod syndrome;
 pub mod tile;
 pub mod types;
@@ -108,6 +109,7 @@ pub use fabric::{
     FilterSummary, PatchMap, QuantumFabric, TileAssignment, WitnessReceipt,
     linear_patch_map, surface_code, surface_code_d7,
 };
+pub use mincut::{DynamicMinCutEngine, MinCutResult};
 
 /// Crate version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
