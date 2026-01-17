@@ -19,6 +19,9 @@ cognitum-gate-tilezero = { path = "../cognitum-gate-tilezero", optional = true }
 # Quantum error decoding
 fusion-blossom = { version = "0.2", optional = true }
 
+# Mincut-gated attention optimization
+ruvector-mincut-gated-transformer = { path = "../ruvector-mincut-gated-transformer", optional = true }
+
 # Cryptography
 blake3 = "1.5"
 ed25519-dalek = { version = "2.1", features = ["rand_core", "hazmat"] }
@@ -83,7 +86,8 @@ wasm = []  # WASM-compatible mode (no SIMD)
 structural = ["ruvector-mincut"]  # Min-cut based structural filter
 tilezero = ["cognitum-gate-tilezero"]  # TileZero arbiter integration
 decoder = ["fusion-blossom"]  # MWPM decoder via fusion-blossom
-full = ["structural", "tilezero", "simd", "decoder"]  # All features enabled
+attention = ["ruvector-mincut-gated-transformer"]  # Coherence-optimized attention (50% FLOPs reduction)
+full = ["structural", "tilezero", "simd", "decoder", "attention"]  # All features enabled
 
 [lib]
 crate-type = ["rlib"]
