@@ -281,6 +281,28 @@ impl TileZero {
     pub fn verifier(&self) -> Verifier {
         self.permit_state.verifier()
     }
+
+    /// Get the thresholds configuration
+    pub fn thresholds(&self) -> &GateThresholds {
+        &self.thresholds
+    }
+
+    /// Verify the entire receipt chain
+    pub async fn verify_receipt_chain(&self) -> Result<(), ChainVerifyError> {
+        let log = self.receipt_log.read().await;
+        let len = log.len();
+        if len == 0 {
+            return Ok(());
+        }
+        log.verify_chain_to(len as u64 - 1)
+    }
+
+    /// Export all receipts as JSON
+    pub async fn export_receipts_json(&self) -> Result<String, serde_json::Error> {
+        let log = self.receipt_log.read().await;
+        let receipts: Vec<&WitnessReceipt> = log.iter().collect();
+        serde_json::to_string_pretty(&receipts)
+    }
 }
 
 /// Result of replaying a decision

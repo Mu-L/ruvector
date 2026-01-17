@@ -194,6 +194,11 @@ impl ReceiptLog {
     pub fn is_empty(&self) -> bool {
         self.receipts.is_empty()
     }
+
+    /// Iterate over receipts
+    pub fn iter(&self) -> impl Iterator<Item = &WitnessReceipt> {
+        self.receipts.values()
+    }
 }
 
 impl Default for ReceiptLog {

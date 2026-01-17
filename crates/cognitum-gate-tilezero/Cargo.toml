@@ -49,3 +49,15 @@ harness = false
 [[bench]]
 name = "benchmarks"
 harness = false
+
+[[example]]
+name = "basic_gate"
+required-features = []
+
+[[example]]
+name = "human_escalation"
+required-features = []
+
+[[example]]
+name = "receipt_audit"
+required-features = []
