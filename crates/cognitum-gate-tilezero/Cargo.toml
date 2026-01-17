@@ -16,7 +16,7 @@ mincut = ["ruvector-mincut"]
 audit-replay = []
 
 [dependencies]
-ruvector-mincut = { path = "../ruvector-mincut", optional = true }
+ruvector-mincut = { version = "0.1.30", optional = true }
 blake3 = "1.5"
 ed25519-dalek = { version = "2.1", features = ["rand_core", "serde"] }
 rand = "0.8"

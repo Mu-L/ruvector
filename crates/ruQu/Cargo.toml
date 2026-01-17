@@ -13,14 +13,14 @@ categories = ["science", "algorithms", "hardware-support"]
 
 [dependencies]
 # RuVector dependencies - Real implementations
-ruvector-mincut = { path = "../ruvector-mincut", optional = true, features = ["exact"] }
-cognitum-gate-tilezero = { path = "../cognitum-gate-tilezero", optional = true }
+ruvector-mincut = { version = "0.1.30", optional = true, features = ["exact"] }
+cognitum-gate-tilezero = { version = "0.1.0", optional = true }
 
 # Quantum error decoding
 fusion-blossom = { version = "0.2", optional = true }
 
 # Mincut-gated attention optimization
-ruvector-mincut-gated-transformer = { path = "../ruvector-mincut-gated-transformer", optional = true }
+ruvector-mincut-gated-transformer = { version = "0.1.0", optional = true }
 
 # Parallel processing
 rayon = { version = "1.10", optional = true }
