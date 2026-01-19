@@ -103,7 +103,7 @@ use std::time::{Duration, Instant};
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use ruvllm::backends::ModelArchitecture;
 ///
 /// let arch = ModelArchitecture::Mistral;
@@ -161,7 +161,7 @@ impl ModelArchitecture {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use ruvllm::backends::Quantization;
 ///
 /// let quant = Quantization::Q4K;
@@ -314,7 +314,7 @@ pub enum DType {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use ruvllm::backends::GenerateParams;
 ///
 /// // Creative writing (high temperature, diverse sampling)

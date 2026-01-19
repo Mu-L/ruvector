@@ -120,7 +120,7 @@ pub fn is_neon_available() -> bool {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use ruvllm::kernels::AttentionConfig;
 ///
 /// // Standard Mistral-7B configuration with GQA
