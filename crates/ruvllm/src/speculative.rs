@@ -292,7 +292,8 @@ impl TreeNode {
     pub fn add_child(&mut self, token: u32, prob: f32) -> &mut TreeNode {
         let child = TreeNode::new(token, prob, self.depth + 1);
         self.children.push(child);
-        self.children.last_mut().unwrap()
+        // SAFETY: We just pushed, so children is non-empty
+        self.children.last_mut().expect("children is non-empty after push")
     }
 
     /// Get all paths from this node to leaves
@@ -317,11 +318,13 @@ impl TreeNode {
             return vec![self.token];
         }
 
+        // SAFETY: We checked children.is_empty() above, so max_by returns Some
+        // For NaN comparisons, treat them as equal to maintain deterministic behavior
         let best_child = self
             .children
             .iter()
-            .max_by(|a, b| a.prob.partial_cmp(&b.prob).unwrap())
-            .unwrap();
+            .max_by(|a, b| a.prob.partial_cmp(&b.prob).unwrap_or(std::cmp::Ordering::Equal))
+            .expect("children is non-empty");
 
         let mut path = vec![self.token];
         path.extend(best_child.best_path());

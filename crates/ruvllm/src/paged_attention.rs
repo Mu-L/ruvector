@@ -301,7 +301,8 @@ impl PageTable {
                 let entry = self.entries.get(sequence_id);
                 match entry {
                     Some(e) if !e.block_ids.is_empty() => {
-                        let last_block_id = *e.block_ids.last().unwrap();
+                        // SAFETY: We just checked !e.block_ids.is_empty()
+                        let last_block_id = *e.block_ids.last().expect("block_ids is non-empty");
                         let blocks = self.blocks.read();
                         if blocks[last_block_id].is_full(self.config.page_size) {
                             drop(blocks);

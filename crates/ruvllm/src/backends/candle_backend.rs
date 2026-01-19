@@ -615,7 +615,7 @@ mod candle_impl {
             });
 
             self.config = Some(config.clone());
-            *self.current_pos.lock().unwrap() = 0;
+            *self.current_pos.lock().expect("current_pos mutex poisoned") = 0;
 
             tracing::info!("GGUF model loaded successfully");
             Ok(())
@@ -794,7 +794,7 @@ mod candle_impl {
             });
 
             self.config = Some(config.clone());
-            *self.current_pos.lock().unwrap() = 0;
+            *self.current_pos.lock().expect("current_pos mutex poisoned") = 0;
 
             tracing::info!("Safetensors model loaded successfully");
             Ok(())
@@ -806,7 +806,7 @@ mod candle_impl {
                 RuvLLMError::InvalidOperation("No model loaded".to_string())
             })?;
 
-            let mut pos = self.current_pos.lock().unwrap();
+            let mut pos = self.current_pos.lock().expect("current_pos mutex poisoned");
             let current_pos = *pos;
 
             let mut inner = model.inner.lock().map_err(|e| {
@@ -1180,7 +1180,7 @@ mod candle_impl {
                 }
 
                 // Check max context
-                let current_pos = *self.current_pos.lock().unwrap();
+                let current_pos = *self.current_pos.lock().expect("current_pos mutex poisoned");
                 if current_pos >= max_ctx - 1 {
                     tracing::warn!("Reached max context length");
                     break;
@@ -1394,7 +1394,7 @@ mod candle_impl {
             self.ruv_tokenizer = None;
             self.config = None;
             self.model_id.clear();
-            *self.current_pos.lock().unwrap() = 0;
+            *self.current_pos.lock().expect("current_pos mutex poisoned") = 0;
         }
     }
 }

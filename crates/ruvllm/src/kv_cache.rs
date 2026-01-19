@@ -1229,7 +1229,9 @@ impl PooledKvCache {
                 blocks.push(new_block);
             }
 
-            let block = blocks.last_mut().unwrap();
+            // SAFETY: blocks is non-empty because we either just pushed a new block
+            // or the loop condition ensures at least one block exists
+            let block = blocks.last_mut().expect("blocks should be non-empty after allocation");
             let tokens_appended = block.append(remaining_keys, remaining_values);
 
             if tokens_appended == 0 {
