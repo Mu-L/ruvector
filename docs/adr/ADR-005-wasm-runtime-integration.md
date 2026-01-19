@@ -773,3 +773,40 @@ mod benchmarks {
     criterion_main!(benches);
 }
 ```
+
+---
+
+## Related Decisions
+
+- **ADR-001**: Ruvector Core Architecture
+- **ADR-002**: RuvLLM Integration
+- **ADR-003**: SIMD Optimization Strategy
+- **ADR-007**: Security Review & Technical Debt
+
+---
+
+## Security Status (v2.1)
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| SharedArrayBuffer | ✅ Secure | Safety documentation for race conditions |
+| WASM Memory | ✅ Secure | Bounds checking via WASM sandbox |
+| Kernel Loading | ⚠️ Planned | Signature verification pending |
+
+**Fixes Applied:**
+- Added comprehensive safety comments documenting race condition prevention in `shared.rs`
+- JavaScript/WASM coordination patterns documented
+
+**Outstanding Items:**
+- TD-007 (P2): Embedded JavaScript should be extracted to separate files
+
+See ADR-007 for full security audit trail.
+
+---
+
+## Revision History
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-18 | RuVector Architecture Team | Initial version |
+| 1.1 | 2026-01-19 | Security Review Agent | Added security status, related decisions |

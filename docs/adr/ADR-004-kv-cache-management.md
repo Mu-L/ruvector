@@ -989,6 +989,35 @@ pub struct AdaptiveKVCacheConfig {
 
 ---
 
-*Document Version: 1.0*
-*Last Updated: 2026-01-18*
-*Author: RuVector Architecture Team*
+## Related Decisions
+
+- **ADR-001**: Ruvector Core Architecture
+- **ADR-002**: RuvLLM Integration
+- **ADR-006**: Memory Management
+- **ADR-007**: Security Review & Technical Debt
+
+---
+
+## Security Status (v2.1)
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| TwoTierKVCache | ✅ Secure | Safety documentation added to unsafe blocks |
+| AlignedBuffer | ✅ Secure | `set_len_unchecked` with proper invariants |
+| NEON Dequantization | ✅ Secure | Bounds checking before writes |
+
+**Fixes Applied:**
+- Added comprehensive safety documentation for `slice::from_raw_parts`
+- Created proper `set_len_unchecked` method instead of raw pointer writes
+- Added debug assertions for capacity checks
+
+See ADR-007 for full security audit trail.
+
+---
+
+## Revision History
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-18 | RuVector Architecture Team | Initial version |
+| 1.1 | 2026-01-19 | Security Review Agent | Added security status, related decisions |

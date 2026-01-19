@@ -537,8 +537,16 @@ impl PooledBuffer {
 
 impl Drop for PooledBuffer {
     fn drop(&mut self) {
-        // Return buffer to pool
-        // We need to take ownership of data, so we swap with an empty box
+        // SAFETY NOTE: Double-free prevention
+        //
+        // This implementation is safe from double-free because:
+        // 1. Each PooledBuffer has exclusive ownership of its `data` Box
+        // 2. We swap with an empty Box to take ownership before returning
+        // 3. return_buffer() checks for empty buffers and ignores them
+        // 4. If called twice (somehow), the second call finds an empty Box
+        //    which is harmless
+        //
+        // The Arc<BufferPoolInner> ensures the pool outlives this buffer.
         let data = std::mem::replace(&mut self.data, Box::new([]));
         self.pool.return_buffer(self.size_class, data);
     }
@@ -612,7 +620,9 @@ impl BufferPoolInner {
     }
 
     fn return_buffer(&self, size_class: BufferSize, buf: Box<[u8]>) {
-        // Don't return empty buffers (from Drop swap)
+        // SAFETY: Guard against returning empty buffers
+        // This happens when PooledBuffer::Drop swaps data with an empty Box.
+        // Ignoring empty buffers prevents any issues from double-drops.
         if buf.is_empty() {
             return;
         }

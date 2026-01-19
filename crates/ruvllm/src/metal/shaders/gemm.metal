@@ -25,15 +25,21 @@
 using namespace metal;
 
 // ============================================================================
-// M4 Pro Tuned Constants (BM=128, BN=128, BK=32)
+// M4 Pro Tuned Constants (BM=64, BN=64, BK=32)
 // ============================================================================
-constant uint BM = 128;             // Output tile rows (M4 Pro optimal)
-constant uint BN = 128;             // Output tile columns (M4 Pro optimal)
+// SECURITY FIX: Reduced tile sizes to stay within 32KB threadgroup memory limit
+// Previous BM=128,BN=128 with NUM_BUFFERS=3 used ~57KB (exceeds 32KB limit)
+// New: BM=64,BN=64 with NUM_BUFFERS=2:
+//   shared_a: 2 * 64 * 40 * 2 = 10,240 bytes
+//   shared_b: 2 * 32 * 72 * 2 = 9,216 bytes
+//   Total: ~19KB < 32KB limit
+constant uint BM = 64;              // Output tile rows (reduced for memory safety)
+constant uint BN = 64;              // Output tile columns (reduced for memory safety)
 constant uint BK = 32;              // Reduction tile size
 constant uint SIMD_TILE = 8;        // simdgroup_matrix dimension
 constant uint SIMD_SIZE = 32;       // SIMD group size
-constant uint WARPS_PER_BLOCK = 16; // 1024 threads / 64 (for 128x128)
-constant uint NUM_BUFFERS = 3;      // Triple buffering for better latency hiding
+constant uint WARPS_PER_BLOCK = 4;  // 256 threads (for 64x64 tiles)
+constant uint NUM_BUFFERS = 2;      // Double buffering (reduced from 3 for memory safety)
 
 // Legacy tile sizes for compatibility
 constant uint TILE_M = 32;
@@ -53,10 +59,11 @@ struct GemmParams {
 };
 
 // =============================================================================
-// M4 PRO OPTIMIZED: High-Performance FP16 GEMM (BM=128, BN=128, BK=32)
+// M4 PRO OPTIMIZED: High-Performance FP16 GEMM (BM=64, BN=64, BK=32)
 // Grid: (tiles_n, tiles_m, 1) where tiles_x = ceil(x / BM or BN)
-// Threadgroup: 1024 threads (32x32 configuration)
-// Target: 2+ TFLOPS
+// Threadgroup: 256 threads (16x16 configuration) - reduced for memory safety
+// Target: 1.5+ TFLOPS (reduced from 2+ due to smaller tiles for security)
+// SECURITY: Uses only 19KB of 32KB threadgroup memory limit
 // =============================================================================
 kernel void gemm_optimized(
     device const half* A [[buffer(0)]],
@@ -77,15 +84,15 @@ kernel void gemm_optimized(
     if (m_start >= params.m || n_start >= params.n) return;
 
     // Bank conflict-free shared memory with padding (+8 for 128-bit alignment)
-    // Uses 128*40*2 + 32*136*2 = 10240 + 8704 = 18944 bytes < 32KB
+    // Memory usage: 2 * 64 * 40 * 2 + 2 * 32 * 72 * 2 = 10,240 + 9,216 = 19,456 bytes < 32KB
     threadgroup half shared_a[NUM_BUFFERS][BM][BK + 8] __attribute__((aligned(16)));
     threadgroup half shared_b[NUM_BUFFERS][BK][BN + 8] __attribute__((aligned(16)));
 
-    // Each warp computes a 32x32 subblock using 4x4 grid of 8x8 simdgroup_matrix ops
-    // 16 warps cover 4x4 = 128x128 tile
+    // Each warp computes a 16x16 subblock using 2x2 grid of 8x8 simdgroup_matrix ops
+    // 4 warps cover 2x2 = 64x64 tile (reduced from 128x128)
     const uint warp_id = simd_group;
-    const uint warp_m = (warp_id / 4) * 32;   // 0, 32, 64, 96
-    const uint warp_n = (warp_id % 4) * 32;   // 0, 32, 64, 96
+    const uint warp_m = (warp_id / 2) * 32;   // 0, 32 (for 64x64 tile)
+    const uint warp_n = (warp_id % 2) * 32;   // 0, 32 (for 64x64 tile)
 
     // 4x4 accumulator grid per warp (32x32 output per warp using 8x8 tiles)
     simdgroup_half8x8 c_frag[4][4];

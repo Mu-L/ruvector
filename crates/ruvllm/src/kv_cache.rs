@@ -76,16 +76,37 @@ impl AlignedBuffer {
     }
 
     /// Get slice of the buffer
+    ///
+    /// # Safety Invariants (maintained by AlignedBuffer)
+    ///
+    /// This is safe because:
+    /// - `ptr` is always non-null (checked at construction, panics if alloc fails)
+    /// - `ptr` was allocated with proper alignment (CACHE_LINE_SIZE = 64)
+    /// - `len` is always <= `capacity` (enforced by `extend_from_slice`)
+    /// - Memory is valid for reads up to `len` elements
+    /// - No mutable references exist (we take `&self`)
     #[inline(always)]
     pub fn as_slice(&self) -> &[f32] {
-        // SAFETY: ptr is valid and len <= capacity
+        // SAFETY: All invariants are maintained by AlignedBuffer's public API.
+        // ptr is valid (non-null, properly aligned), len <= capacity.
         unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
     }
 
     /// Get mutable slice of the buffer
+    ///
+    /// # Safety Invariants (maintained by AlignedBuffer)
+    ///
+    /// This is safe because:
+    /// - `ptr` is always non-null (checked at construction, panics if alloc fails)
+    /// - `ptr` was allocated with proper alignment (CACHE_LINE_SIZE = 64)
+    /// - `len` is always <= `capacity` (enforced by `extend_from_slice`)
+    /// - Memory is valid for writes up to `len` elements
+    /// - We have exclusive mutable access (we take `&mut self`)
     #[inline(always)]
     pub fn as_mut_slice(&mut self) -> &mut [f32] {
-        // SAFETY: ptr is valid and len <= capacity
+        // SAFETY: All invariants are maintained by AlignedBuffer's public API.
+        // ptr is valid (non-null, properly aligned), len <= capacity.
+        // Exclusive access is guaranteed by &mut self.
         unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
     }
 
@@ -136,6 +157,27 @@ impl AlignedBuffer {
     #[inline(always)]
     pub fn capacity(&self) -> usize {
         self.capacity
+    }
+
+    /// Set the length of the buffer without bounds checking.
+    ///
+    /// # Safety
+    ///
+    /// This method is unsafe because caller must ensure:
+    /// - `new_len <= self.capacity`
+    /// - All elements up to `new_len` have been initialized
+    ///
+    /// This is used by the NEON dequantization path which writes
+    /// directly to the buffer and then updates the length.
+    #[inline(always)]
+    pub(crate) unsafe fn set_len_unchecked(&mut self, new_len: usize) {
+        debug_assert!(
+            new_len <= self.capacity,
+            "set_len_unchecked: {} > {}",
+            new_len,
+            self.capacity
+        );
+        self.len = new_len;
     }
 }
 
@@ -578,10 +620,33 @@ impl QuantizedKvPair {
     }
 
     /// Dequantize directly into an aligned buffer (zero-copy optimization)
+    ///
+    /// # Safety Notes
+    ///
+    /// NEON path requires careful handling to maintain AlignedBuffer invariants:
+    /// - Must verify capacity before writing
+    /// - Must update len atomically after writing to maintain consistency
     #[inline(always)]
     fn dequantize_into(&self, key_buf: &mut AlignedBuffer, value_buf: &mut AlignedBuffer) {
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         unsafe {
+            // SECURITY FIX: Verify capacity before NEON write to prevent buffer overflow
+            let key_new_len = key_buf.len() + self.keys.len();
+            let value_new_len = value_buf.len() + self.values.len();
+
+            assert!(
+                key_new_len <= key_buf.capacity(),
+                "Key buffer overflow: {} > {}",
+                key_new_len,
+                key_buf.capacity()
+            );
+            assert!(
+                value_new_len <= value_buf.capacity(),
+                "Value buffer overflow: {} > {}",
+                value_new_len,
+                value_buf.capacity()
+            );
+
             Self::dequantize_neon_into(
                 &self.keys,
                 key_buf.as_mut_ptr().add(key_buf.len()),
@@ -594,11 +659,11 @@ impl QuantizedKvPair {
                 self.scale,
                 self.zero_point,
             );
-            // Update lengths manually
-            let key_len = key_buf.len() + self.keys.len();
-            let value_len = value_buf.len() + self.values.len();
-            std::ptr::write(&mut key_buf.len as *mut usize, key_len);
-            std::ptr::write(&mut value_buf.len as *mut usize, value_len);
+
+            // SECURITY FIX: Use set_len method instead of raw pointer write
+            // This maintains the AlignedBuffer invariants properly
+            key_buf.set_len_unchecked(key_new_len);
+            value_buf.set_len_unchecked(value_new_len);
         }
 
         #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]

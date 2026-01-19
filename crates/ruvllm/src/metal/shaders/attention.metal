@@ -93,8 +93,13 @@ kernel void flash_attention_v2(
 
     if (head >= params.num_heads) return;
 
+    // SECURITY FIX: Guard against division by zero in GQA calculation
+    // This could occur with malformed parameters where num_kv_heads == 0
+    if (params.num_kv_heads == 0) return;
+
     // GQA: map query head to KV head
-    const uint kv_head = head / (params.num_heads / params.num_kv_heads);
+    const uint heads_per_kv = params.num_heads / params.num_kv_heads;
+    const uint kv_head = (heads_per_kv > 0) ? (head / heads_per_kv) : 0;
 
     // Query positions this tile handles
     const uint q_start = q_tile_idx * TILE_Q;
@@ -259,7 +264,10 @@ kernel void flash_attention_f16(
 
     if (head >= params.num_heads) return;
 
-    const uint kv_head = head / (params.num_heads / params.num_kv_heads);
+    // SECURITY FIX: Guard against division by zero in GQA calculation
+    if (params.num_kv_heads == 0) return;
+    const uint heads_per_kv = params.num_heads / params.num_kv_heads;
+    const uint kv_head = (heads_per_kv > 0) ? (head / heads_per_kv) : 0;
     const uint q_start = q_tile_idx * TILE_Q;
     const uint q_end = min(q_start + TILE_Q, params.seq_len);
 
@@ -391,7 +399,10 @@ kernel void flash_attention(
         return;
     }
 
-    uint kv_head = head / (params.num_heads / params.num_kv_heads);
+    // SECURITY FIX: Guard against division by zero in GQA calculation
+    if (params.num_kv_heads == 0) return;
+    uint heads_per_kv = params.num_heads / params.num_kv_heads;
+    uint kv_head = (heads_per_kv > 0) ? (head / heads_per_kv) : 0;
 
     threadgroup float shared_k[TILE_KV][HEAD_DIM_MAX];
     threadgroup float shared_v[TILE_KV][HEAD_DIM_MAX];
@@ -465,7 +476,10 @@ kernel void flash_attention_simd(
         return;
     }
 
-    uint kv_head = head / (params.num_heads / params.num_kv_heads);
+    // SECURITY FIX: Guard against division by zero in GQA calculation
+    if (params.num_kv_heads == 0) return;
+    uint heads_per_kv = params.num_heads / params.num_kv_heads;
+    uint kv_head = (heads_per_kv > 0) ? (head / heads_per_kv) : 0;
     uint d_start = simd_group * SIMD_SIZE;
     uint d = d_start + simd_lane;
 

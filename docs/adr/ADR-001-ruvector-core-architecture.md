@@ -748,3 +748,38 @@ Distance Operations (1536-dim):
   Euclidean: 141ns
   Dot Product: 29ns (384-dim)
 ```
+
+---
+
+## Related Decisions
+
+- **ADR-002**: RuvLLM Integration with Ruvector
+- **ADR-003**: SIMD Optimization Strategy
+- **ADR-004**: KV Cache Management
+- **ADR-005**: WASM Runtime Integration
+- **ADR-006**: Memory Management
+- **ADR-007**: Security Review & Technical Debt
+
+---
+
+## Implementation Status (v2.1)
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| HNSW Index | ✅ Implemented | M=32, ef_construct=256, 16K QPS |
+| SIMD Distance | ✅ Implemented | AVX2/NEON with fallback |
+| Scalar Quantization | ✅ Implemented | 8-bit with min/max scaling |
+| Batch Operations | ✅ Implemented | Rayon parallel distances |
+| Graph Store | ✅ Implemented | Adjacency list with metadata |
+| Persistence | ✅ Implemented | Binary format with versioning |
+
+**Security Status:** Core components reviewed. No critical vulnerabilities in ruvector-core. See ADR-007 for full audit (RuvLLM-specific issues).
+
+---
+
+## Revision History
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-18 | Ruvector Architecture Team | Initial version |
+| 1.1 | 2026-01-19 | Security Review Agent | Added implementation status, related decisions |

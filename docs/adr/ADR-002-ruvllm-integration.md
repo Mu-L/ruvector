@@ -807,9 +807,11 @@ Ruvector enables SONA's three-tier temporal learning:
 ## Related Decisions
 
 - **ADR-001**: Ruvector Core Architecture (HNSW, Graph Store)
-- **ADR-003**: SONA Learning Loop Implementation
-- **ADR-004**: Quantization Strategy Selection
-- **ADR-005**: Federated Learning Protocol
+- **ADR-003**: SIMD Optimization Strategy
+- **ADR-004**: KV Cache Management
+- **ADR-005**: WASM Runtime Integration
+- **ADR-006**: Memory Management
+- **ADR-007**: Security Review & Technical Debt (v2.1 audit findings)
 
 ---
 
@@ -842,8 +844,25 @@ Ruvector enables SONA's three-tier temporal learning:
 
 ---
 
+## Implementation Status (v2.1)
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| KV Cache Manager | ✅ Implemented | Two-tier FP16/Q4 with safety fixes |
+| Session Store | ✅ Implemented | SQLite-backed with WASM support |
+| Pattern Memory | ✅ Implemented | HNSW-indexed ReasoningBank |
+| Witness Logs | ⚠️ Partial | Schema defined, async writes pending |
+| Metal Shaders | ⚠️ Partial | Kernels exist but incomplete (see ADR-007) |
+| Token Generation | ❌ Stub | Placeholder returns dummy response |
+| GGUF Loading | ❌ Stub | Parser exists, loading not wired |
+
+**Security Status:** 8 critical vulnerabilities fixed (2026-01-19). See ADR-007 for full audit trail.
+
+---
+
 ## Revision History
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-01-18 | Ruvector Architecture Team | Initial version |
+| 1.1 | 2026-01-19 | Security Review Agent | Added implementation status, linked ADR-007 |

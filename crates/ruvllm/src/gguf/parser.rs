@@ -338,11 +338,24 @@ fn read_value<R: Read>(reader: &mut R) -> Result<GgufValue> {
     }
 }
 
+/// Maximum allowed array size to prevent OOM attacks from malicious GGUF files.
+/// Set to 10 million elements (about 80MB for u64 arrays).
+const MAX_ARRAY_SIZE: usize = 10_000_000;
+
 fn read_array<R: Read>(reader: &mut R) -> Result<GgufValue> {
     let elem_type_id = read_u32(reader)?;
     let elem_type = GgufValueType::try_from(elem_type_id)?;
-    let count = read_u64(reader)? as usize;
+    let count = read_u64(reader)?;
 
+    // SECURITY FIX: Prevent integer overflow and OOM attacks from malicious GGUF files
+    if count > MAX_ARRAY_SIZE as u64 {
+        return Err(RuvLLMError::Model(format!(
+            "Array size {} exceeds maximum allowed size {}",
+            count, MAX_ARRAY_SIZE
+        )));
+    }
+
+    let count = count as usize;
     let mut values = Vec::with_capacity(count);
 
     for _ in 0..count {

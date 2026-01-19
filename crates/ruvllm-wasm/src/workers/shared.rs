@@ -141,6 +141,11 @@ impl SharedTensor {
     }
 
     /// Copy data from a slice.
+    ///
+    /// # Safety Note (SECURITY)
+    /// This method uses non-atomic write operations. When sharing memory
+    /// between Web Workers, ensure proper synchronization (e.g., barriers)
+    /// before and after bulk copies to prevent data races.
     pub fn copy_from(&self, data: &[f32]) -> Result<(), JsValue> {
         if data.len() != self.len() {
             return Err(JsValue::from_str(&format!(
@@ -154,6 +159,12 @@ impl SharedTensor {
     }
 
     /// Get an element at the given index.
+    ///
+    /// # Safety Note (SECURITY)
+    /// This method uses non-atomic read operations. When sharing memory
+    /// between Web Workers, use `get_atomic()` instead to avoid data races.
+    /// Non-atomic reads may return torn values if another thread is writing.
+    #[inline]
     pub fn get(&self, index: usize) -> Option<f32> {
         if index < self.len() {
             Some(self.view.get_index(index as u32))
@@ -163,6 +174,12 @@ impl SharedTensor {
     }
 
     /// Set an element at the given index.
+    ///
+    /// # Safety Note (SECURITY)
+    /// This method uses non-atomic write operations. When sharing memory
+    /// between Web Workers, use `set_atomic()` instead to avoid data races.
+    /// Non-atomic writes may cause torn writes visible to other threads.
+    #[inline]
     pub fn set(&self, index: usize, value: f32) -> Result<(), JsValue> {
         if index >= self.len() {
             return Err(JsValue::from_str("Index out of bounds"));

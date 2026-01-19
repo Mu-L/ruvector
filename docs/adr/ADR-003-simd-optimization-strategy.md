@@ -371,3 +371,34 @@ Cosine Similarity:
 =================================================================
 Benchmark complete!
 ```
+
+---
+
+## Related Decisions
+
+- **ADR-001**: Ruvector Core Architecture
+- **ADR-002**: RuvLLM Integration
+- **ADR-005**: WASM Runtime Integration
+- **ADR-007**: Security Review & Technical Debt
+
+---
+
+## Outstanding Items
+
+The following SIMD-related technical debt was identified in the v2.1 security review:
+
+| Item | Priority | Effort | Description |
+|------|----------|--------|-------------|
+| TD-006 | P1 | 4h | NEON activation functions process scalars, not vectors |
+| TD-009 | P2 | 4h | Excessive allocations in attention layer |
+
+See ADR-007 for full technical debt breakdown.
+
+---
+
+## Revision History
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-18 | RuVector Architecture Team | Initial version |
+| 1.1 | 2026-01-19 | Security Review Agent | Added outstanding items, related decisions |

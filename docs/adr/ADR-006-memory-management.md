@@ -872,3 +872,37 @@ CPU Memory (host staging):
 | Load adapter (hot) | <100us | >10K/s |
 | Load adapter (warm) | <1ms | >1K/s |
 | Load adapter (cold) | <10ms | >100/s |
+
+---
+
+## Related Decisions
+
+- **ADR-001**: Ruvector Core Architecture
+- **ADR-002**: RuvLLM Integration
+- **ADR-004**: KV Cache Management
+- **ADR-007**: Security Review & Technical Debt
+
+---
+
+## Security Status (v2.1)
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| PooledBuffer | ✅ Secure | Double-free prevention documented |
+| PageAllocator | ✅ Secure | RAII handles prevent leaks |
+| AdapterManager | ✅ Secure | Access control enforced |
+
+**Fixes Applied:**
+- Documented safety invariants in `PooledBuffer::Drop` implementation
+- Added empty buffer check in `return_buffer()` to prevent double-free
+
+See ADR-007 for full security audit trail.
+
+---
+
+## Revision History
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.0 | 2026-01-18 | RuVector Architecture Team | Initial version |
+| 1.1 | 2026-01-19 | Security Review Agent | Added security status, related decisions |

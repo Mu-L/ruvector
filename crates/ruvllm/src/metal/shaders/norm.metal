@@ -648,6 +648,10 @@ kernel void group_rms_norm(
 // Fused LayerNorm + Linear projection (common in transformers)
 // output = Linear(LayerNorm(x)) = W @ LayerNorm(x) + b
 // =============================================================================
+// Maximum supported hidden_size for layer_norm_linear_fused kernel
+// Metal threadgroup memory is limited and we use static arrays for performance
+constant uint MAX_HIDDEN_SIZE_FUSED = 1024;
+
 kernel void layer_norm_linear_fused(
     device const float* x [[buffer(0)]],
     device const float* ln_weight [[buffer(1)]],
@@ -669,11 +673,16 @@ kernel void layer_norm_linear_fused(
 
     if (out_idx >= out_features) return;
 
+    // SECURITY FIX: Guard against buffer overflow in threadgroup memory
+    // The normalized array is statically sized to MAX_HIDDEN_SIZE_FUSED (1024)
+    // Models with larger hidden dimensions should use the non-fused kernel instead
+    if (hidden_size > MAX_HIDDEN_SIZE_FUSED) return;
+
     uint x_offset = batch_idx * hidden_size;
 
     threadgroup float warp_sum[32];
     threadgroup float warp_sum_sq[32];
-    threadgroup float normalized[1024];  // Store normalized values for all threads to use
+    threadgroup float normalized[MAX_HIDDEN_SIZE_FUSED];  // SECURITY: Using constant for clarity
 
     // Step 1: Compute mean and variance with SIMD reduction
     float local_sum = 0.0f;
