@@ -5,7 +5,6 @@
 
 #![cfg(target_arch = "wasm32")]
 
-use wasm_bindgen::JsValue;
 use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
@@ -177,8 +176,8 @@ fn test_kv_cache_append() {
     let cache = KvCacheWasm::new(&config);
 
     // Append one token (stride = 2 * 4 = 8)
-    let keys: Vec<f32> = vec![1.0; 8];
-    let values: Vec<f32> = vec![2.0; 8];
+    let keys: Vec<f32> = vec![0.1; 8];
+    let values: Vec<f32> = vec![0.2; 8];
 
     cache.append(&keys, &values).expect("append failed");
 

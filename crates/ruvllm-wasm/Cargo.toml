@@ -14,9 +14,6 @@ categories = ["wasm", "api-bindings", "web-programming"]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# RuvLLM integration (WASM-compatible subset)
-ruvllm-integration = { path = "../ruvllm", default-features = false, features = ["wasm"] }
-
 # WASM bindings
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
@@ -35,15 +32,8 @@ serde_json = "1.0"
 # Error handling
 console_error_panic_hook = { version = "0.1", optional = true }
 
-# Async support for WASM
-futures = "0.3"
-
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
 
 [features]
 default = ["console_error_panic_hook"]
-
-[profile.release]
-opt-level = "s"
-lto = true

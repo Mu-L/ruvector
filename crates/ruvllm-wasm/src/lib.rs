@@ -34,11 +34,12 @@
 //!     console.log("Formatted prompt:", prompt);
 //!
 //!     // KV Cache management
-//!     const kvCache = llm.getKvCache();
-//!     if (kvCache) {
-//!         const stats = kvCache.stats();
-//!         console.log("Cache stats:", stats.toJson());
-//!     }
+//!     const config = new KvCacheConfigWasm();
+//!     config.tailLength = 256;
+//!     const kvCache = new KvCacheWasm(config);
+//!
+//!     const stats = kvCache.stats();
+//!     console.log("Cache stats:", stats.toJson());
 //! }
 //!
 //! main();
@@ -75,7 +76,7 @@
 //!                           +-------------------+
 //!                           | Memory Pool       |
 //!                           | KV Cache          |
-//!                           | Tokenizer         |
+//!                           | Chat Templates    |
 //!                           +-------------------+
 //! ```
 //!
@@ -85,7 +86,7 @@
 //!
 //! - **Arena Allocator**: O(1) bump allocation for inference temporaries
 //! - **Buffer Pool**: Pre-allocated buffers in size classes (1KB-256KB)
-//! - **Two-Tier KV Cache**: FP16 tail + Q4 quantized store
+//! - **Two-Tier KV Cache**: FP32 tail + u8 quantized store
 //!
 //! ## Browser Compatibility
 //!
@@ -105,7 +106,7 @@ pub mod utils;
 
 // Re-export all bindings
 pub use bindings::*;
-pub use utils::{log, warn, error, now_ms, Timer, set_panic_hook};
+pub use utils::{error, log, now_ms, set_panic_hook, warn, Timer};
 
 /// Initialize the WASM module.
 ///
@@ -121,9 +122,9 @@ pub fn init() {
 /// Returns true if the WASM module is functioning correctly.
 #[wasm_bindgen(js_name = healthCheck)]
 pub fn health_check() -> bool {
-    // Try to create a small arena to verify memory allocation works
-    let arena = ruvllm_integration::memory_pool::InferenceArena::new(1024);
-    arena.capacity() == 1024
+    // Verify we can create basic structures
+    let arena = bindings::InferenceArenaWasm::new(1024);
+    arena.capacity() >= 1024
 }
 
 #[cfg(test)]
@@ -131,9 +132,54 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_health_check() {
-        // In non-WASM tests, this verifies the logic works
-        let arena = ruvllm_integration::memory_pool::InferenceArena::new(1024);
-        assert!(arena.capacity() >= 1024);
+    fn test_generate_config_defaults() {
+        let config = bindings::GenerateConfig::new();
+        assert_eq!(config.max_tokens, 256);
+        assert!((config.temperature - 0.7).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_chat_message() {
+        let msg = bindings::ChatMessageWasm::user("Hello");
+        assert_eq!(msg.role(), "user");
+        assert_eq!(msg.content(), "Hello");
+    }
+
+    #[test]
+    fn test_chat_template_detection() {
+        let template = bindings::ChatTemplateWasm::detect_from_model_id("meta-llama/Llama-3-8B");
+        assert_eq!(template.name(), "llama3");
+    }
+
+    #[test]
+    fn test_kv_cache_config() {
+        let mut config = bindings::KvCacheConfigWasm::new();
+        config.set_tail_length(512);
+        assert_eq!(config.tail_length(), 512);
+    }
+
+    #[test]
+    fn test_arena_creation() {
+        let arena = bindings::InferenceArenaWasm::new(4096);
+        assert!(arena.capacity() >= 4096);
+        assert_eq!(arena.used(), 0);
+    }
+
+    #[test]
+    fn test_buffer_pool() {
+        let pool = bindings::BufferPoolWasm::new();
+        pool.prewarm_all(2);
+        assert!(pool.hit_rate() >= 0.0);
+    }
+
+    // RuvLLMWasm::new() calls set_panic_hook which uses wasm-bindgen,
+    // so skip this test on non-wasm32 targets
+    #[cfg(target_arch = "wasm32")]
+    #[test]
+    fn test_ruvllm_wasm() {
+        let mut llm = bindings::RuvLLMWasm::new();
+        assert!(!llm.is_initialized());
+        llm.initialize().unwrap();
+        assert!(llm.is_initialized());
     }
 }

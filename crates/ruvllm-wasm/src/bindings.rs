@@ -19,20 +19,67 @@
 //! config.maxTokens = 256;
 //! config.temperature = 0.7;
 //!
-//! // Generate text
-//! const result = await llm.generate("Hello, world!", config);
-//! console.log(result);
+//! // Format a chat conversation
+//! const template = ChatTemplateWasm.llama3();
+//! const messages = [
+//!     ChatMessageWasm.system("You are helpful."),
+//!     ChatMessageWasm.user("Hello!"),
+//! ];
+//! const prompt = template.format(messages);
 //! ```
 
-use crate::utils::{log, result_to_js};
-use ruvllm_integration::{
-    kv_cache::{KvCacheConfig, KvCacheStats, TwoTierKvCache},
-    memory_pool::{ArenaStats, BufferPool, BufferPoolStats, BufferSize, InferenceArena},
-    tokenizer::{ChatMessage, ChatTemplate, Role},
-    types::{ModelSize, Precision},
-};
+use crate::utils::log;
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
+use std::collections::VecDeque;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use wasm_bindgen::prelude::*;
+
+// ============================================================================
+// Types (re-implemented for WASM self-containment)
+// ============================================================================
+
+/// Model size variants
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ModelSize {
+    Tiny,
+    Small,
+    Medium,
+    Large,
+}
+
+impl Default for ModelSize {
+    fn default() -> Self {
+        Self::Small
+    }
+}
+
+/// Precision levels for quantization
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Precision {
+    FP32,
+    FP16,
+    Q8,
+    Q4K,
+    Q4,
+}
+
+impl Default for Precision {
+    fn default() -> Self {
+        Self::FP16
+    }
+}
+
+impl Precision {
+    pub fn bytes_per_element(&self) -> f32 {
+        match self {
+            Self::FP32 => 4.0,
+            Self::FP16 => 2.0,
+            Self::Q8 => 1.0,
+            Self::Q4K | Self::Q4 => 0.5,
+        }
+    }
+}
 
 // ============================================================================
 // Configuration Types
@@ -175,6 +222,54 @@ impl Default for GenerateConfig {
 // Chat Message Types
 // ============================================================================
 
+/// Message role in a conversation
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Role {
+    System,
+    User,
+    Assistant,
+}
+
+impl Role {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Role::System => "system",
+            Role::User => "user",
+            Role::Assistant => "assistant",
+        }
+    }
+}
+
+/// Internal chat message
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub role: Role,
+    pub content: String,
+}
+
+impl ChatMessage {
+    pub fn system(content: &str) -> Self {
+        Self {
+            role: Role::System,
+            content: content.to_string(),
+        }
+    }
+
+    pub fn user(content: &str) -> Self {
+        Self {
+            role: Role::User,
+            content: content.to_string(),
+        }
+    }
+
+    pub fn assistant(content: &str) -> Self {
+        Self {
+            role: Role::Assistant,
+            content: content.to_string(),
+        }
+    }
+}
+
 /// Chat message for instruction-tuned models.
 ///
 /// Used to construct conversations for chat-based inference.
@@ -220,6 +315,193 @@ impl ChatMessageWasm {
     #[wasm_bindgen(getter)]
     pub fn content(&self) -> String {
         self.inner.content.clone()
+    }
+}
+
+// ============================================================================
+// Chat Templates
+// ============================================================================
+
+/// Chat template variants
+#[derive(Debug, Clone)]
+pub enum ChatTemplate {
+    Llama3,
+    Llama2,
+    Mistral,
+    Qwen,
+    ChatML,
+    Phi,
+    Gemma,
+    Custom(String),
+}
+
+impl ChatTemplate {
+    /// Detect template from model ID
+    pub fn detect_from_model_id(model_id: &str) -> Self {
+        let model_lower = model_id.to_lowercase();
+        if model_lower.contains("llama-3") || model_lower.contains("llama3") {
+            Self::Llama3
+        } else if model_lower.contains("llama-2") || model_lower.contains("llama2") {
+            Self::Llama2
+        } else if model_lower.contains("mistral") || model_lower.contains("mixtral") {
+            Self::Mistral
+        } else if model_lower.contains("qwen") {
+            Self::Qwen
+        } else if model_lower.contains("phi") {
+            Self::Phi
+        } else if model_lower.contains("gemma") {
+            Self::Gemma
+        } else {
+            Self::ChatML
+        }
+    }
+
+    /// Format messages using this template
+    pub fn format(&self, messages: &[ChatMessage]) -> String {
+        match self {
+            Self::Llama3 => self.format_llama3(messages),
+            Self::Llama2 => self.format_llama2(messages),
+            Self::Mistral => self.format_mistral(messages),
+            Self::Qwen => self.format_qwen(messages),
+            Self::ChatML => self.format_chatml(messages),
+            Self::Phi => self.format_phi(messages),
+            Self::Gemma => self.format_gemma(messages),
+            Self::Custom(template) => self.format_custom(messages, template),
+        }
+    }
+
+    fn format_llama3(&self, messages: &[ChatMessage]) -> String {
+        let mut output = String::from("<|begin_of_text|>");
+
+        for msg in messages {
+            let role = msg.role.as_str();
+            output.push_str(&format!(
+                "<|start_header_id|>{}<|end_header_id|>\n\n{}<|eot_id|>",
+                role, msg.content
+            ));
+        }
+
+        output.push_str("<|start_header_id|>assistant<|end_header_id|>\n\n");
+        output
+    }
+
+    fn format_llama2(&self, messages: &[ChatMessage]) -> String {
+        let mut output = String::new();
+        let mut system_msg = String::new();
+
+        for msg in messages {
+            match msg.role {
+                Role::System => {
+                    system_msg = msg.content.clone();
+                }
+                Role::User => {
+                    if !system_msg.is_empty() {
+                        output.push_str(&format!(
+                            "<s>[INST] <<SYS>>\n{}\n<</SYS>>\n\n{} [/INST]",
+                            system_msg, msg.content
+                        ));
+                        system_msg.clear();
+                    } else {
+                        output.push_str(&format!("<s>[INST] {} [/INST]", msg.content));
+                    }
+                }
+                Role::Assistant => {
+                    output.push_str(&format!(" {} </s>", msg.content));
+                }
+            }
+        }
+
+        output
+    }
+
+    fn format_mistral(&self, messages: &[ChatMessage]) -> String {
+        let mut output = String::new();
+
+        for msg in messages {
+            match msg.role {
+                Role::System | Role::User => {
+                    output.push_str(&format!("[INST] {} [/INST]", msg.content));
+                }
+                Role::Assistant => {
+                    output.push_str(&format!("{}</s>", msg.content));
+                }
+            }
+        }
+
+        output
+    }
+
+    fn format_qwen(&self, messages: &[ChatMessage]) -> String {
+        self.format_chatml(messages)
+    }
+
+    fn format_chatml(&self, messages: &[ChatMessage]) -> String {
+        let mut output = String::new();
+
+        for msg in messages {
+            output.push_str(&format!(
+                "<|im_start|>{}\n{}<|im_end|>\n",
+                msg.role.as_str(),
+                msg.content
+            ));
+        }
+
+        output.push_str("<|im_start|>assistant\n");
+        output
+    }
+
+    fn format_phi(&self, messages: &[ChatMessage]) -> String {
+        let mut output = String::new();
+
+        for msg in messages {
+            match msg.role {
+                Role::System => {
+                    output.push_str(&format!("<|system|>\n{}<|end|>\n", msg.content));
+                }
+                Role::User => {
+                    output.push_str(&format!("<|user|>\n{}<|end|>\n", msg.content));
+                }
+                Role::Assistant => {
+                    output.push_str(&format!("<|assistant|>\n{}<|end|>\n", msg.content));
+                }
+            }
+        }
+
+        output.push_str("<|assistant|>\n");
+        output
+    }
+
+    fn format_gemma(&self, messages: &[ChatMessage]) -> String {
+        let mut output = String::new();
+
+        for msg in messages {
+            match msg.role {
+                Role::User => {
+                    output.push_str(&format!("<start_of_turn>user\n{}<end_of_turn>\n", msg.content));
+                }
+                Role::Assistant => {
+                    output.push_str(&format!(
+                        "<start_of_turn>model\n{}<end_of_turn>\n",
+                        msg.content
+                    ));
+                }
+                Role::System => {
+                    // Gemma doesn't have native system support, prepend to first user
+                    output.push_str(&format!(
+                        "<start_of_turn>user\n{}\n",
+                        msg.content
+                    ));
+                }
+            }
+        }
+
+        output.push_str("<start_of_turn>model\n");
+        output
+    }
+
+    fn format_custom(&self, _messages: &[ChatMessage], _template: &str) -> String {
+        // Simplified custom template support
+        String::new()
     }
 }
 
@@ -319,13 +601,9 @@ impl ChatTemplateWasm {
 #[wasm_bindgen]
 #[derive(Debug, Clone)]
 pub struct KvCacheConfigWasm {
-    /// Number of tokens in high-precision tail
     tail_length: usize,
-    /// Maximum tokens to cache
     max_tokens: usize,
-    /// Number of KV heads
     num_kv_heads: usize,
-    /// Head dimension
     head_dim: usize,
 }
 
@@ -389,19 +667,6 @@ impl KvCacheConfigWasm {
     pub fn set_head_dim(&mut self, value: usize) {
         self.head_dim = value;
     }
-
-    /// Convert to internal config.
-    pub(crate) fn to_internal(&self) -> KvCacheConfig {
-        KvCacheConfig {
-            tail_length: self.tail_length,
-            tail_precision: Precision::FP16,
-            store_precision: Precision::Q4,
-            max_tokens: self.max_tokens,
-            num_kv_heads: self.num_kv_heads,
-            head_dim: self.head_dim,
-            migration_batch: 64,
-        }
-    }
 }
 
 impl Default for KvCacheConfigWasm {
@@ -414,18 +679,12 @@ impl Default for KvCacheConfigWasm {
 #[wasm_bindgen]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KvCacheStatsWasm {
-    /// Total tokens cached
-    pub total_tokens: usize,
-    /// Tokens in high-precision tail
-    pub tail_tokens: usize,
-    /// Tokens in quantized store
-    pub store_tokens: usize,
-    /// Bytes used by tail
-    pub tail_bytes: usize,
-    /// Bytes used by store
-    pub store_bytes: usize,
-    /// Compression ratio
-    pub compression_ratio: f32,
+    total_tokens: usize,
+    tail_tokens: usize,
+    store_tokens: usize,
+    tail_bytes: usize,
+    store_bytes: usize,
+    compression_ratio: f32,
 }
 
 #[wasm_bindgen]
@@ -467,7 +726,14 @@ impl KvCacheStatsWasm {
 /// and quantized store for older tokens.
 #[wasm_bindgen]
 pub struct KvCacheWasm {
-    inner: TwoTierKvCache,
+    // FP16 tail cache (recent tokens)
+    tail_keys: RefCell<VecDeque<Vec<f32>>>,
+    tail_values: RefCell<VecDeque<Vec<f32>>>,
+    // Quantized store (older tokens)
+    store_keys: RefCell<VecDeque<Vec<u8>>>,
+    store_values: RefCell<VecDeque<Vec<u8>>>,
+    // Configuration
+    config: KvCacheConfigWasm,
 }
 
 #[wasm_bindgen]
@@ -476,39 +742,102 @@ impl KvCacheWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(config: &KvCacheConfigWasm) -> KvCacheWasm {
         KvCacheWasm {
-            inner: TwoTierKvCache::new(config.to_internal()),
+            tail_keys: RefCell::new(VecDeque::new()),
+            tail_values: RefCell::new(VecDeque::new()),
+            store_keys: RefCell::new(VecDeque::new()),
+            store_values: RefCell::new(VecDeque::new()),
+            config: config.clone(),
         }
     }
 
     /// Create with default configuration.
     #[wasm_bindgen(js_name = withDefaults)]
     pub fn with_defaults() -> KvCacheWasm {
-        KvCacheWasm {
-            inner: TwoTierKvCache::new(KvCacheConfig::default()),
-        }
+        KvCacheWasm::new(&KvCacheConfigWasm::default())
     }
 
     /// Append KV pairs to the cache.
-    ///
-    /// # Arguments
-    ///
-    /// * `keys` - Key tensor as Float32Array
-    /// * `values` - Value tensor as Float32Array
     #[wasm_bindgen]
     pub fn append(&self, keys: &[f32], values: &[f32]) -> Result<(), JsValue> {
-        self.inner.append(keys, values).map_err(|e| JsValue::from_str(&e.to_string()))
+        let stride = self.config.num_kv_heads * self.config.head_dim;
+
+        if keys.len() != stride || values.len() != stride {
+            return Err(JsValue::from_str(&format!(
+                "Key/value length must be {} (num_kv_heads * head_dim)",
+                stride
+            )));
+        }
+
+        let mut tail_keys = self.tail_keys.borrow_mut();
+        let mut tail_values = self.tail_values.borrow_mut();
+
+        // Add to tail
+        tail_keys.push_back(keys.to_vec());
+        tail_values.push_back(values.to_vec());
+
+        // Migrate from tail to store if needed
+        while tail_keys.len() > self.config.tail_length {
+            if let (Some(k), Some(v)) = (tail_keys.pop_front(), tail_values.pop_front()) {
+                // Simple quantization: convert f32 to u8
+                let quantized_k: Vec<u8> = k.iter().map(|&x| ((x + 1.0) * 127.5) as u8).collect();
+                let quantized_v: Vec<u8> = v.iter().map(|&x| ((x + 1.0) * 127.5) as u8).collect();
+
+                self.store_keys.borrow_mut().push_back(quantized_k);
+                self.store_values.borrow_mut().push_back(quantized_v);
+            }
+        }
+
+        // Evict from store if exceeds max tokens
+        let total = tail_keys.len() + self.store_keys.borrow().len();
+        if total > self.config.max_tokens {
+            let excess = total - self.config.max_tokens;
+            for _ in 0..excess {
+                self.store_keys.borrow_mut().pop_front();
+                self.store_values.borrow_mut().pop_front();
+            }
+        }
+
+        Ok(())
     }
 
     /// Get all cached KV pairs.
-    ///
-    /// Returns an object with `keys` and `values` Float32Arrays.
     #[wasm_bindgen(js_name = getAllKv)]
     pub fn get_all_kv(&self) -> Result<JsValue, JsValue> {
-        let (keys, values) = self.inner.get_all_kv();
+        let stride = self.config.num_kv_heads * self.config.head_dim;
+
+        // Dequantize store
+        let store_keys = self.store_keys.borrow();
+        let store_values = self.store_values.borrow();
+        let tail_keys = self.tail_keys.borrow();
+        let tail_values = self.tail_values.borrow();
+
+        let total_tokens = store_keys.len() + tail_keys.len();
+        let mut all_keys = Vec::with_capacity(total_tokens * stride);
+        let mut all_values = Vec::with_capacity(total_tokens * stride);
+
+        // Dequantize store
+        for k in store_keys.iter() {
+            for &b in k {
+                all_keys.push((b as f32 / 127.5) - 1.0);
+            }
+        }
+        for v in store_values.iter() {
+            for &b in v {
+                all_values.push((b as f32 / 127.5) - 1.0);
+            }
+        }
+
+        // Add tail (already f32)
+        for k in tail_keys.iter() {
+            all_keys.extend(k);
+        }
+        for v in tail_values.iter() {
+            all_values.extend(v);
+        }
 
         let obj = js_sys::Object::new();
-        let keys_array = js_sys::Float32Array::from(keys.as_slice());
-        let values_array = js_sys::Float32Array::from(values.as_slice());
+        let keys_array = js_sys::Float32Array::from(all_keys.as_slice());
+        let values_array = js_sys::Float32Array::from(all_values.as_slice());
 
         js_sys::Reflect::set(&obj, &"keys".into(), &keys_array)?;
         js_sys::Reflect::set(&obj, &"values".into(), &values_array)?;
@@ -519,27 +848,44 @@ impl KvCacheWasm {
     /// Get cache statistics.
     #[wasm_bindgen]
     pub fn stats(&self) -> KvCacheStatsWasm {
-        let stats = self.inner.stats();
+        let stride = self.config.num_kv_heads * self.config.head_dim;
+        let tail_tokens = self.tail_keys.borrow().len();
+        let store_tokens = self.store_keys.borrow().len();
+
+        let tail_bytes = tail_tokens * stride * 4; // f32
+        let store_bytes = store_tokens * stride * 1; // u8
+
+        let full_precision_bytes = (tail_tokens + store_tokens) * stride * 4;
+        let actual_bytes = tail_bytes + store_bytes;
+        let compression_ratio = if actual_bytes > 0 {
+            full_precision_bytes as f32 / actual_bytes as f32
+        } else {
+            1.0
+        };
+
         KvCacheStatsWasm {
-            total_tokens: stats.total_tokens,
-            tail_tokens: stats.tail_tokens,
-            store_tokens: stats.store_tokens,
-            tail_bytes: stats.tail_bytes,
-            store_bytes: stats.store_bytes,
-            compression_ratio: stats.compression_ratio,
+            total_tokens: tail_tokens + store_tokens,
+            tail_tokens,
+            store_tokens,
+            tail_bytes,
+            store_bytes,
+            compression_ratio,
         }
     }
 
     /// Clear the cache.
     #[wasm_bindgen]
     pub fn clear(&self) {
-        self.inner.clear();
+        self.tail_keys.borrow_mut().clear();
+        self.tail_values.borrow_mut().clear();
+        self.store_keys.borrow_mut().clear();
+        self.store_values.borrow_mut().clear();
     }
 
     /// Get the total number of cached tokens.
     #[wasm_bindgen(getter, js_name = tokenCount)]
     pub fn token_count(&self) -> usize {
-        self.inner.stats().total_tokens
+        self.tail_keys.borrow().len() + self.store_keys.borrow().len()
     }
 }
 
@@ -547,13 +893,18 @@ impl KvCacheWasm {
 // Memory Arena
 // ============================================================================
 
+const DEFAULT_ALIGNMENT: usize = 64;
+
 /// Arena allocator for inference buffers.
 ///
 /// Provides fast bump allocation with O(1) reset for
 /// generation-step temporaries.
 #[wasm_bindgen]
 pub struct InferenceArenaWasm {
-    inner: InferenceArena,
+    data: RefCell<Vec<u8>>,
+    offset: AtomicUsize,
+    high_water_mark: AtomicUsize,
+    allocation_count: AtomicUsize,
 }
 
 #[wasm_bindgen]
@@ -561,73 +912,73 @@ impl InferenceArenaWasm {
     /// Create a new arena with the specified capacity in bytes.
     #[wasm_bindgen(constructor)]
     pub fn new(capacity: usize) -> InferenceArenaWasm {
+        let aligned_capacity = (capacity + DEFAULT_ALIGNMENT - 1) & !(DEFAULT_ALIGNMENT - 1);
         InferenceArenaWasm {
-            inner: InferenceArena::new(capacity),
+            data: RefCell::new(vec![0u8; aligned_capacity]),
+            offset: AtomicUsize::new(0),
+            high_water_mark: AtomicUsize::new(0),
+            allocation_count: AtomicUsize::new(0),
         }
     }
 
     /// Create an arena sized for model dimensions.
     #[wasm_bindgen(js_name = forModel)]
     pub fn for_model(hidden_dim: usize, vocab_size: usize, batch_size: usize) -> InferenceArenaWasm {
-        InferenceArenaWasm {
-            inner: InferenceArena::for_model(hidden_dim, vocab_size, batch_size),
-        }
+        let activations = hidden_dim * batch_size * 4;
+        let logits = vocab_size * batch_size * 4;
+        let scratch = hidden_dim * 4 * 4;
+        let total = (activations + logits + scratch) * 2;
+        InferenceArenaWasm::new(total)
     }
 
     /// Reset the arena, making all memory available for reuse.
     #[wasm_bindgen]
     pub fn reset(&self) {
-        self.inner.reset();
+        self.offset.store(0, Ordering::Release);
+        self.allocation_count.store(0, Ordering::Relaxed);
     }
 
     /// Get current bytes used.
     #[wasm_bindgen(getter)]
     pub fn used(&self) -> usize {
-        self.inner.used()
+        self.offset.load(Ordering::Acquire)
     }
 
     /// Get total capacity.
     #[wasm_bindgen(getter)]
     pub fn capacity(&self) -> usize {
-        self.inner.capacity()
+        self.data.borrow().len()
     }
 
     /// Get remaining available bytes.
     #[wasm_bindgen(getter)]
     pub fn remaining(&self) -> usize {
-        self.inner.remaining()
+        self.capacity() - self.used()
     }
 
     /// Get high water mark (maximum bytes ever used).
     #[wasm_bindgen(getter, js_name = highWaterMark)]
     pub fn high_water_mark(&self) -> usize {
-        self.inner.high_water_mark()
+        self.high_water_mark.load(Ordering::Relaxed)
     }
 
     /// Get statistics as JSON.
     #[wasm_bindgen(js_name = statsJson)]
     pub fn stats_json(&self) -> Result<String, JsValue> {
-        let stats = self.inner.stats();
-        serde_json::to_string(&ArenaStatsJson {
-            capacity: stats.capacity,
-            used: stats.used,
-            remaining: stats.remaining,
-            high_water_mark: stats.high_water_mark,
-            allocation_count: stats.allocation_count,
-            utilization: stats.utilization,
-        })
-        .map_err(|e| JsValue::from_str(&e.to_string()))
-    }
-}
+        let capacity = self.capacity();
+        let used = self.used();
 
-#[derive(Serialize)]
-struct ArenaStatsJson {
-    capacity: usize,
-    used: usize,
-    remaining: usize,
-    high_water_mark: usize,
-    allocation_count: usize,
-    utilization: f64,
+        let stats = serde_json::json!({
+            "capacity": capacity,
+            "used": used,
+            "remaining": capacity - used,
+            "high_water_mark": self.high_water_mark(),
+            "allocation_count": self.allocation_count.load(Ordering::Relaxed),
+            "utilization": if capacity > 0 { used as f64 / capacity as f64 } else { 0.0 }
+        });
+
+        serde_json::to_string(&stats).map_err(|e| JsValue::from_str(&e.to_string()))
+    }
 }
 
 // ============================================================================
@@ -635,64 +986,95 @@ struct ArenaStatsJson {
 // ============================================================================
 
 /// Buffer pool for efficient memory reuse.
-///
-/// Maintains free lists for multiple size classes to
-/// minimize allocation overhead during inference.
 #[wasm_bindgen]
 pub struct BufferPoolWasm {
-    inner: BufferPool,
+    free_lists: RefCell<[Vec<Vec<u8>>; 5]>,
+    max_per_class: usize,
+    hits: AtomicUsize,
+    misses: AtomicUsize,
 }
+
+const BUFFER_SIZES: [usize; 5] = [1024, 4096, 16384, 65536, 262144];
 
 #[wasm_bindgen]
 impl BufferPoolWasm {
     /// Create a new buffer pool with default settings.
     #[wasm_bindgen(constructor)]
     pub fn new() -> BufferPoolWasm {
-        BufferPoolWasm {
-            inner: BufferPool::new(),
-        }
+        BufferPoolWasm::with_capacity(32)
     }
 
     /// Create with specified max buffers per size class.
     #[wasm_bindgen(js_name = withCapacity)]
     pub fn with_capacity(max_buffers_per_class: usize) -> BufferPoolWasm {
         BufferPoolWasm {
-            inner: BufferPool::with_capacity(max_buffers_per_class),
+            free_lists: RefCell::new([
+                Vec::with_capacity(max_buffers_per_class),
+                Vec::with_capacity(max_buffers_per_class),
+                Vec::with_capacity(max_buffers_per_class),
+                Vec::with_capacity(max_buffers_per_class),
+                Vec::with_capacity(max_buffers_per_class),
+            ]),
+            max_per_class: max_buffers_per_class,
+            hits: AtomicUsize::new(0),
+            misses: AtomicUsize::new(0),
         }
     }
 
     /// Pre-warm the pool by allocating buffers.
     #[wasm_bindgen(js_name = prewarmAll)]
     pub fn prewarm_all(&self, count_per_class: usize) {
-        self.inner.prewarm_all(count_per_class);
+        let mut lists = self.free_lists.borrow_mut();
+        for (i, size) in BUFFER_SIZES.iter().enumerate() {
+            for _ in 0..count_per_class.min(self.max_per_class) {
+                if lists[i].len() < self.max_per_class {
+                    lists[i].push(vec![0u8; *size]);
+                }
+            }
+        }
     }
 
     /// Get pool statistics as JSON.
     #[wasm_bindgen(js_name = statsJson)]
     pub fn stats_json(&self) -> Result<String, JsValue> {
-        let stats = self.inner.stats();
-        serde_json::to_string(&PoolStatsJson {
-            hits: stats.hits,
-            misses: stats.misses,
-            allocations: stats.allocations,
-            returns: stats.returns,
-            drops: stats.drops,
-            free_buffers: stats.free_buffers.to_vec(),
-            hit_rate: stats.hit_rate,
-        })
-        .map_err(|e| JsValue::from_str(&e.to_string()))
+        let lists = self.free_lists.borrow();
+        let free_buffers: Vec<usize> = lists.iter().map(|l| l.len()).collect();
+        let hits = self.hits.load(Ordering::Relaxed);
+        let misses = self.misses.load(Ordering::Relaxed);
+        let total = hits + misses;
+
+        let stats = serde_json::json!({
+            "hits": hits,
+            "misses": misses,
+            "allocations": misses,
+            "returns": hits,
+            "drops": 0,
+            "free_buffers": free_buffers,
+            "hit_rate": if total > 0 { hits as f64 / total as f64 } else { 0.0 }
+        });
+
+        serde_json::to_string(&stats).map_err(|e| JsValue::from_str(&e.to_string()))
     }
 
     /// Get the hit rate (0.0 - 1.0).
     #[wasm_bindgen(getter, js_name = hitRate)]
     pub fn hit_rate(&self) -> f64 {
-        self.inner.stats().hit_rate
+        let hits = self.hits.load(Ordering::Relaxed);
+        let total = hits + self.misses.load(Ordering::Relaxed);
+        if total > 0 {
+            hits as f64 / total as f64
+        } else {
+            0.0
+        }
     }
 
     /// Clear all pooled buffers.
     #[wasm_bindgen]
     pub fn clear(&self) {
-        self.inner.clear();
+        let mut lists = self.free_lists.borrow_mut();
+        for list in lists.iter_mut() {
+            list.clear();
+        }
     }
 }
 
@@ -700,17 +1082,6 @@ impl Default for BufferPoolWasm {
     fn default() -> Self {
         Self::new()
     }
-}
-
-#[derive(Serialize)]
-struct PoolStatsJson {
-    hits: u64,
-    misses: u64,
-    allocations: u64,
-    returns: u64,
-    drops: u64,
-    free_buffers: Vec<usize>,
-    hit_rate: f64,
 }
 
 // ============================================================================
@@ -721,23 +1092,10 @@ struct PoolStatsJson {
 ///
 /// Provides the primary entry point for LLM inference in the browser.
 /// Manages KV cache, memory pools, and inference state.
-///
-/// # Example (JavaScript)
-///
-/// ```javascript
-/// const llm = new RuvLLMWasm();
-/// await llm.initialize();
-///
-/// const result = await llm.generate("Hello, ", config);
-/// console.log(result);
-/// ```
 #[wasm_bindgen]
 pub struct RuvLLMWasm {
-    /// KV cache for attention
-    kv_cache: Option<TwoTierKvCache>,
-    /// Buffer pool for memory management
-    buffer_pool: BufferPool,
-    /// Whether the engine is initialized
+    kv_cache: Option<KvCacheWasm>,
+    buffer_pool: BufferPoolWasm,
     initialized: bool,
 }
 
@@ -750,7 +1108,7 @@ impl RuvLLMWasm {
 
         RuvLLMWasm {
             kv_cache: None,
-            buffer_pool: BufferPool::new(),
+            buffer_pool: BufferPoolWasm::new(),
             initialized: false,
         }
     }
@@ -766,15 +1124,11 @@ impl RuvLLMWasm {
     pub fn initialize_with_config(&mut self, config: &KvCacheConfigWasm) -> Result<(), JsValue> {
         log("Initializing RuvLLM WASM...");
 
-        // Create KV cache
-        self.kv_cache = Some(TwoTierKvCache::new(config.to_internal()));
-
-        // Pre-warm buffer pool
+        self.kv_cache = Some(KvCacheWasm::new(config));
         self.buffer_pool.prewarm_all(4);
-
         self.initialized = true;
-        log("RuvLLM WASM initialized successfully");
 
+        log("RuvLLM WASM initialized successfully");
         Ok(())
     }
 
@@ -784,28 +1138,10 @@ impl RuvLLMWasm {
         self.initialized
     }
 
-    /// Get the KV cache (if initialized).
-    #[wasm_bindgen(js_name = getKvCache)]
-    pub fn get_kv_cache(&self) -> Option<KvCacheWasm> {
-        self.kv_cache.as_ref().map(|cache| KvCacheWasm {
-            inner: TwoTierKvCache::new(KvCacheConfig::default()),
-        })
-    }
-
     /// Get buffer pool statistics.
     #[wasm_bindgen(js_name = getPoolStats)]
     pub fn get_pool_stats(&self) -> Result<String, JsValue> {
-        let stats = self.buffer_pool.stats();
-        serde_json::to_string(&PoolStatsJson {
-            hits: stats.hits,
-            misses: stats.misses,
-            allocations: stats.allocations,
-            returns: stats.returns,
-            drops: stats.drops,
-            free_buffers: stats.free_buffers.to_vec(),
-            hit_rate: stats.hit_rate,
-        })
-        .map_err(|e| JsValue::from_str(&e.to_string()))
+        self.buffer_pool.stats_json()
     }
 
     /// Clear all caches and reset state.
@@ -826,10 +1162,7 @@ impl RuvLLMWasm {
 
     /// Format a chat conversation using a template.
     #[wasm_bindgen(js_name = formatChat)]
-    pub fn format_chat(
-        template: &ChatTemplateWasm,
-        messages: Vec<ChatMessageWasm>,
-    ) -> String {
+    pub fn format_chat(template: &ChatTemplateWasm, messages: Vec<ChatMessageWasm>) -> String {
         let inner_messages: Vec<ChatMessage> = messages.into_iter().map(|m| m.inner).collect();
         template.inner.format(&inner_messages)
     }

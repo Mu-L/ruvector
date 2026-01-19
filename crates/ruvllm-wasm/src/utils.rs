@@ -124,9 +124,19 @@ pub fn result_to_js<T, E: std::fmt::Display>(result: Result<T, E>) -> Result<T, 
 mod tests {
     use super::*;
 
+    // set_panic_hook requires console_error_panic_hook which only works on wasm32
+    #[cfg(target_arch = "wasm32")]
     #[test]
     fn test_set_panic_hook() {
         // Should not panic
+        set_panic_hook();
+    }
+
+    // Non-wasm32 version just verifies the function exists
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_set_panic_hook_noop() {
+        // On non-wasm32, this is a no-op
         set_panic_hook();
     }
 }
