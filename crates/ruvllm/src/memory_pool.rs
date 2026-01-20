@@ -111,37 +111,43 @@ impl InferenceArena {
     ///
     /// * `capacity` - Size in bytes (will be rounded up to alignment)
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if memory allocation fails.
+    /// Returns an error if memory allocation fails.
     ///
     /// # Example
     ///
     /// ```rust,ignore
-    /// let arena = InferenceArena::new(4 * 1024 * 1024); // 4MB arena
+    /// let arena = InferenceArena::new(4 * 1024 * 1024)?; // 4MB arena
     /// ```
-    pub fn new(capacity: usize) -> Self {
+    pub fn new(capacity: usize) -> Result<Self> {
         // Round up to cache line size
         let aligned_capacity = (capacity + DEFAULT_ALIGNMENT - 1) & !(DEFAULT_ALIGNMENT - 1);
 
         let layout = Layout::from_size_align(aligned_capacity, DEFAULT_ALIGNMENT)
-            .expect("Invalid arena layout");
+            .map_err(|_| RuvLLMError::OutOfMemory(format!(
+                "Invalid arena layout: size={}, align={}",
+                aligned_capacity, DEFAULT_ALIGNMENT
+            )))?;
 
         // SAFETY: Layout is valid and we track the allocation
         let memory = unsafe { alloc_zeroed(layout) };
 
         if memory.is_null() {
-            panic!("Failed to allocate arena of {} bytes", aligned_capacity);
+            return Err(RuvLLMError::OutOfMemory(format!(
+                "Failed to allocate arena of {} bytes",
+                aligned_capacity
+            )));
         }
 
-        Self {
+        Ok(Self {
             memory,
             offset: AtomicUsize::new(0),
             capacity: aligned_capacity,
             layout,
             high_water_mark: AtomicUsize::new(0),
             allocation_count: AtomicUsize::new(0),
-        }
+        })
     }
 
     /// Create a new arena sized for model dimensions.
@@ -153,7 +159,11 @@ impl InferenceArena {
     /// * `hidden_dim` - Model hidden dimension
     /// * `vocab_size` - Vocabulary size
     /// * `batch_size` - Maximum batch size
-    pub fn for_model(hidden_dim: usize, vocab_size: usize, batch_size: usize) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if memory allocation fails.
+    pub fn for_model(hidden_dim: usize, vocab_size: usize, batch_size: usize) -> Result<Self> {
         // Estimate: activations + logits + scratch space
         let activations = hidden_dim * batch_size * std::mem::size_of::<f32>();
         let logits = vocab_size * batch_size * std::mem::size_of::<f32>();
@@ -606,12 +616,12 @@ impl BufferPoolInner {
         }
     }
 
-    fn acquire(&self, size_class: BufferSize) -> Box<[u8]> {
+    fn acquire(&self, size_class: BufferSize) -> Result<Box<[u8]>> {
         let mut pool = self.pools[size_class.index()].lock();
 
         if let Some(buf) = pool.free_list.pop() {
             self.stats.hits.fetch_add(1, Ordering::Relaxed);
-            buf
+            Ok(buf)
         } else {
             self.stats.misses.fetch_add(1, Ordering::Relaxed);
             self.stats.allocations.fetch_add(1, Ordering::Relaxed);
@@ -638,18 +648,24 @@ impl BufferPoolInner {
         }
     }
 
-    fn allocate_buffer(size_class: BufferSize) -> Box<[u8]> {
+    fn allocate_buffer(size_class: BufferSize) -> Result<Box<[u8]>> {
         let size = size_class.bytes();
         let layout = Layout::from_size_align(size, DEFAULT_ALIGNMENT)
-            .expect("Invalid buffer layout");
+            .map_err(|_| RuvLLMError::OutOfMemory(format!(
+                "Invalid buffer layout: size={}, align={}",
+                size, DEFAULT_ALIGNMENT
+            )))?;
 
         // SAFETY: Layout is valid
         unsafe {
             let ptr = alloc_zeroed(layout);
             if ptr.is_null() {
-                panic!("Failed to allocate buffer of {} bytes", size);
+                return Err(RuvLLMError::OutOfMemory(format!(
+                    "Failed to allocate buffer of {} bytes",
+                    size
+                )));
             }
-            Box::from_raw(std::slice::from_raw_parts_mut(ptr, size))
+            Ok(Box::from_raw(std::slice::from_raw_parts_mut(ptr, size)))
         }
     }
 }
@@ -718,20 +734,28 @@ impl BufferPool {
     /// Acquire a buffer of the specified size class.
     ///
     /// Returns a pooled buffer that automatically returns to the pool when dropped.
-    pub fn acquire(&self, size_class: BufferSize) -> PooledBuffer {
-        let data = self.inner.acquire(size_class);
-        PooledBuffer {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if memory allocation fails.
+    pub fn acquire(&self, size_class: BufferSize) -> Result<PooledBuffer> {
+        let data = self.inner.acquire(size_class)?;
+        Ok(PooledBuffer {
             data,
             size_class,
             pool: Arc::clone(&self.inner),
-        }
+        })
     }
 
     /// Acquire a buffer large enough for the specified byte count.
     ///
-    /// Returns None if the requested size exceeds the largest size class.
-    pub fn acquire_for_size(&self, bytes: usize) -> Option<PooledBuffer> {
-        BufferSize::for_size(bytes).map(|size_class| self.acquire(size_class))
+    /// Returns None if the requested size exceeds the largest size class,
+    /// or an error if memory allocation fails.
+    pub fn acquire_for_size(&self, bytes: usize) -> Result<Option<PooledBuffer>> {
+        match BufferSize::for_size(bytes) {
+            Some(size_class) => Ok(Some(self.acquire(size_class)?)),
+            None => Ok(None),
+        }
     }
 
     /// Pre-warm the pool by allocating buffers.
@@ -740,18 +764,28 @@ impl BufferPool {
     ///
     /// * `size_class` - Size class to pre-warm
     /// * `count` - Number of buffers to pre-allocate
-    pub fn prewarm(&self, size_class: BufferSize, count: usize) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if memory allocation fails.
+    pub fn prewarm(&self, size_class: BufferSize, count: usize) -> Result<()> {
         for _ in 0..count {
-            let buf = BufferPoolInner::allocate_buffer(size_class);
+            let buf = BufferPoolInner::allocate_buffer(size_class)?;
             self.inner.return_buffer(size_class, buf);
         }
+        Ok(())
     }
 
     /// Pre-warm all size classes with the specified count.
-    pub fn prewarm_all(&self, count_per_class: usize) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if memory allocation fails for any size class.
+    pub fn prewarm_all(&self, count_per_class: usize) -> Result<()> {
         for size_class in BufferSize::all() {
-            self.prewarm(size_class, count_per_class);
+            self.prewarm(size_class, count_per_class)?;
         }
+        Ok(())
     }
 
     /// Get pool statistics.
@@ -836,20 +870,26 @@ struct ThreadScratch {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl ThreadScratch {
-    fn new(size: usize) -> Self {
+    fn new(size: usize) -> Result<Self> {
         let layout = Layout::from_size_align(size, DEFAULT_ALIGNMENT)
-            .expect("Invalid scratch layout");
+            .map_err(|_| RuvLLMError::OutOfMemory(format!(
+                "Invalid scratch layout: size={}, align={}",
+                size, DEFAULT_ALIGNMENT
+            )))?;
 
         // SAFETY: Layout is valid
         let data = unsafe {
             let ptr = alloc_zeroed(layout);
             if ptr.is_null() {
-                panic!("Failed to allocate scratch buffer of {} bytes", size);
+                return Err(RuvLLMError::OutOfMemory(format!(
+                    "Failed to allocate scratch buffer of {} bytes",
+                    size
+                )));
             }
             Box::from_raw(std::slice::from_raw_parts_mut(ptr, size))
         };
 
-        Self { data, used: 0 }
+        Ok(Self { data, used: 0 })
     }
 
     fn reset(&mut self) {
@@ -892,12 +932,17 @@ impl ScratchSpaceManager {
     ///
     /// * `scratch_size` - Size of each thread's scratch buffer in bytes
     /// * `max_threads` - Maximum number of threads to support
-    pub fn new(scratch_size: usize, max_threads: usize) -> Self {
-        Self {
+    ///
+    /// # Note
+    ///
+    /// Memory is allocated lazily when `get_scratch` is called.
+    /// This method always succeeds but returns Result for API consistency with WASM.
+    pub fn new(scratch_size: usize, max_threads: usize) -> Result<Self> {
+        Ok(Self {
             scratches: RwLock::new(HashMap::with_capacity(max_threads)),
             scratch_size,
             max_threads,
-        }
+        })
     }
 
     /// Create a scratch manager sized for model dimensions.
@@ -906,7 +951,7 @@ impl ScratchSpaceManager {
     ///
     /// * `hidden_dim` - Model hidden dimension
     /// * `max_threads` - Maximum number of threads
-    pub fn for_model(hidden_dim: usize, max_threads: usize) -> Self {
+    pub fn for_model(hidden_dim: usize, max_threads: usize) -> Result<Self> {
         // Size for intermediate computations: 4x hidden_dim in f32
         let scratch_size = hidden_dim * 4 * std::mem::size_of::<f32>();
         Self::new(scratch_size, max_threads)
@@ -919,7 +964,11 @@ impl ScratchSpaceManager {
     /// # Returns
     ///
     /// A reference to the thread's scratch space.
-    pub fn get_scratch(&self) -> ScratchSpace<'_> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the maximum thread count is exceeded or memory allocation fails.
+    pub fn get_scratch(&self) -> Result<ScratchSpace<'_>> {
         let thread_id = std::thread::current().id();
 
         // Fast path: check if scratch exists
@@ -927,9 +976,9 @@ impl ScratchSpaceManager {
             let scratches = self.scratches.read();
             if let Some(scratch_cell) = scratches.get(&thread_id) {
                 // SAFETY: This thread owns this scratch buffer
-                return ScratchSpace {
+                return Ok(ScratchSpace {
                     scratch: unsafe { &mut *scratch_cell.get() },
-                };
+                });
             }
         }
 
@@ -940,23 +989,23 @@ impl ScratchSpaceManager {
             // Double-check after acquiring write lock
             if !scratches.contains_key(&thread_id) {
                 if scratches.len() >= self.max_threads {
-                    panic!(
+                    return Err(RuvLLMError::OutOfMemory(format!(
                         "Exceeded maximum thread count ({}) for scratch space",
                         self.max_threads
-                    );
+                    )));
                 }
 
                 scratches.insert(
                     thread_id,
-                    UnsafeCell::new(ThreadScratch::new(self.scratch_size)),
+                    UnsafeCell::new(ThreadScratch::new(self.scratch_size)?),
                 );
             }
 
             let scratch_cell = scratches.get(&thread_id).unwrap();
             // SAFETY: This thread owns this scratch buffer
-            ScratchSpace {
+            Ok(ScratchSpace {
                 scratch: unsafe { &mut *scratch_cell.get() },
-            }
+            })
         }
     }
 
@@ -1033,20 +1082,26 @@ struct WasmScratch {
 
 #[cfg(target_arch = "wasm32")]
 impl WasmScratch {
-    fn new(size: usize) -> Self {
+    fn new(size: usize) -> Result<Self> {
         let layout = Layout::from_size_align(size, DEFAULT_ALIGNMENT)
-            .expect("Invalid scratch layout");
+            .map_err(|_| RuvLLMError::OutOfMemory(format!(
+                "Invalid scratch layout: size={}, align={}",
+                size, DEFAULT_ALIGNMENT
+            )))?;
 
         // SAFETY: Layout is valid
         let data = unsafe {
             let ptr = alloc_zeroed(layout);
             if ptr.is_null() {
-                panic!("Failed to allocate scratch buffer of {} bytes", size);
+                return Err(RuvLLMError::OutOfMemory(format!(
+                    "Failed to allocate scratch buffer of {} bytes",
+                    size
+                )));
             }
             Box::from_raw(std::slice::from_raw_parts_mut(ptr, size))
         };
 
-        Self { data, used: 0 }
+        Ok(Self { data, used: 0 })
     }
 
     fn reset(&mut self) {
@@ -1076,26 +1131,34 @@ unsafe impl Sync for ScratchSpaceManager {}
 #[cfg(target_arch = "wasm32")]
 impl ScratchSpaceManager {
     /// Create a new scratch space manager.
-    pub fn new(scratch_size: usize, _max_threads: usize) -> Self {
-        Self {
-            scratch: UnsafeCell::new(WasmScratch::new(scratch_size)),
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if memory allocation fails.
+    pub fn new(scratch_size: usize, _max_threads: usize) -> Result<Self> {
+        Ok(Self {
+            scratch: UnsafeCell::new(WasmScratch::new(scratch_size)?),
             scratch_size,
             max_threads: 1, // WASM is single-threaded
-        }
+        })
     }
 
     /// Create a scratch manager sized for model dimensions.
-    pub fn for_model(hidden_dim: usize, _max_threads: usize) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if memory allocation fails.
+    pub fn for_model(hidden_dim: usize, _max_threads: usize) -> Result<Self> {
         let scratch_size = hidden_dim * 4 * std::mem::size_of::<f32>();
         Self::new(scratch_size, 1)
     }
 
     /// Get the scratch buffer.
-    pub fn get_scratch(&self) -> ScratchSpace<'_> {
+    pub fn get_scratch(&self) -> Result<ScratchSpace<'_>> {
         // SAFETY: WASM is single-threaded
-        ScratchSpace {
+        Ok(ScratchSpace {
             scratch: unsafe { &mut *self.scratch.get() },
-        }
+        })
     }
 
     /// Reset the scratch buffer.
@@ -1356,26 +1419,38 @@ pub struct MemoryManager {
 
 impl MemoryManager {
     /// Create a new memory manager with default configuration.
-    pub fn new() -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if memory allocation fails.
+    pub fn new() -> Result<Self> {
         Self::with_config(MemoryManagerConfig::default())
     }
 
     /// Create a memory manager with custom configuration.
-    pub fn with_config(config: MemoryManagerConfig) -> Self {
-        let arena = InferenceArena::new(config.arena_capacity);
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if memory allocation fails.
+    pub fn with_config(config: MemoryManagerConfig) -> Result<Self> {
+        let arena = InferenceArena::new(config.arena_capacity)?;
         let pool = BufferPool::with_capacity(config.pool_buffers_per_class);
-        let scratch = ScratchSpaceManager::new(config.scratch_size, config.max_threads);
+        let scratch = ScratchSpaceManager::new(config.scratch_size, config.max_threads)?;
 
-        Self {
+        Ok(Self {
             arena,
             pool,
             scratch,
             config,
-        }
+        })
     }
 
     /// Create a memory manager sized for model dimensions.
-    pub fn for_model(hidden_dim: usize, vocab_size: usize, batch_size: usize) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if memory allocation fails.
+    pub fn for_model(hidden_dim: usize, vocab_size: usize, batch_size: usize) -> Result<Self> {
         let config = MemoryManagerConfig::for_model(hidden_dim, vocab_size, batch_size);
         Self::with_config(config)
     }
@@ -1390,8 +1465,12 @@ impl MemoryManager {
     }
 
     /// Pre-warm the buffer pool.
-    pub fn prewarm_pool(&self, count_per_class: usize) {
-        self.pool.prewarm_all(count_per_class);
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if memory allocation fails.
+    pub fn prewarm_pool(&self, count_per_class: usize) -> Result<()> {
+        self.pool.prewarm_all(count_per_class)
     }
 
     /// Get combined statistics.
@@ -1406,12 +1485,6 @@ impl MemoryManager {
     /// Get the configuration.
     pub fn config(&self) -> &MemoryManagerConfig {
         &self.config
-    }
-}
-
-impl Default for MemoryManager {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -1447,7 +1520,7 @@ mod tests {
 
     #[test]
     fn test_arena_basic() {
-        let arena = InferenceArena::new(4096);
+        let arena = InferenceArena::new(4096).expect("arena creation failed");
 
         // Allocate some memory
         let buf1: &mut [f32] = arena.alloc(100).expect("alloc failed");
@@ -1469,7 +1542,7 @@ mod tests {
 
     #[test]
     fn test_arena_alignment() {
-        let arena = InferenceArena::new(4096);
+        let arena = InferenceArena::new(4096).expect("arena creation failed");
 
         // Allocate bytes to misalign
         let _: &mut [u8] = arena.alloc(1).unwrap();
@@ -1481,7 +1554,7 @@ mod tests {
 
     #[test]
     fn test_arena_out_of_memory() {
-        let arena = InferenceArena::new(1024);
+        let arena = InferenceArena::new(1024).expect("arena creation failed");
 
         // Try to allocate more than capacity
         let result: Option<&mut [f32]> = arena.alloc(1000);
@@ -1493,12 +1566,12 @@ mod tests {
         let pool = BufferPool::new();
 
         // Acquire and release
-        let buf1 = pool.acquire(BufferSize::KB4);
+        let buf1 = pool.acquire(BufferSize::KB4).expect("acquire failed");
         assert_eq!(buf1.capacity(), 4096);
         drop(buf1);
 
         // Should reuse buffer
-        let buf2 = pool.acquire(BufferSize::KB4);
+        let buf2 = pool.acquire(BufferSize::KB4).expect("acquire failed");
         assert_eq!(buf2.capacity(), 4096);
 
         let stats = pool.stats();
@@ -1510,7 +1583,7 @@ mod tests {
         let pool = BufferPool::new();
 
         for size in BufferSize::all() {
-            let buf = pool.acquire(size);
+            let buf = pool.acquire(size).expect("acquire failed");
             assert_eq!(buf.capacity(), size.bytes());
         }
     }
@@ -1518,7 +1591,7 @@ mod tests {
     #[test]
     fn test_buffer_pool_typed_access() {
         let pool = BufferPool::new();
-        let mut buf = pool.acquire(BufferSize::KB1);
+        let mut buf = pool.acquire(BufferSize::KB1).expect("acquire failed");
 
         // Access as f32 slice
         let floats = buf.as_slice_mut::<f32>();
@@ -1533,7 +1606,7 @@ mod tests {
     #[test]
     fn test_buffer_pool_prewarm() {
         let pool = BufferPool::new();
-        pool.prewarm(BufferSize::KB4, 5);
+        pool.prewarm(BufferSize::KB4, 5).expect("prewarm failed");
 
         let stats = pool.stats();
         assert_eq!(stats.free_buffers[BufferSize::KB4.index()], 5);
@@ -1541,9 +1614,9 @@ mod tests {
 
     #[test]
     fn test_scratch_space_basic() {
-        let manager = ScratchSpaceManager::new(4096, 4);
+        let manager = ScratchSpaceManager::new(4096, 4).expect("manager creation failed");
 
-        let mut scratch = manager.get_scratch();
+        let mut scratch = manager.get_scratch().expect("get_scratch failed");
 
         // Allocate some space
         let buf1: &mut [f32] = scratch.get(100).expect("alloc failed");
@@ -1565,13 +1638,13 @@ mod tests {
         use std::sync::Arc;
         use std::thread;
 
-        let manager = Arc::new(ScratchSpaceManager::new(4096, 4));
+        let manager = Arc::new(ScratchSpaceManager::new(4096, 4).expect("manager creation failed"));
 
         let handles: Vec<_> = (0..4)
             .map(|_| {
                 let manager = Arc::clone(&manager);
                 thread::spawn(move || {
-                    let mut scratch = manager.get_scratch();
+                    let mut scratch = manager.get_scratch().expect("get_scratch failed");
                     let _: &mut [f32] = scratch.get(100).unwrap();
                 })
             })
@@ -1586,18 +1659,18 @@ mod tests {
 
     #[test]
     fn test_memory_manager_basic() {
-        let manager = MemoryManager::new();
+        let manager = MemoryManager::new().expect("manager creation failed");
 
         // Use arena
         let arena_buf: &mut [f32] = manager.arena.alloc(100).unwrap();
         assert_eq!(arena_buf.len(), 100);
 
         // Use pool
-        let pool_buf = manager.pool.acquire(BufferSize::KB4);
+        let pool_buf = manager.pool.acquire(BufferSize::KB4).expect("acquire failed");
         assert_eq!(pool_buf.capacity(), 4096);
 
         // Use scratch
-        let mut scratch = manager.scratch.get_scratch();
+        let mut scratch = manager.scratch.get_scratch().expect("get_scratch failed");
         let scratch_buf: &mut [f32] = scratch.get(50).unwrap();
         assert_eq!(scratch_buf.len(), 50);
 
@@ -1608,7 +1681,7 @@ mod tests {
 
     #[test]
     fn test_memory_manager_for_model() {
-        let manager = MemoryManager::for_model(4096, 32000, 1);
+        let manager = MemoryManager::for_model(4096, 32000, 1).expect("manager creation failed");
 
         let stats = manager.stats();
         assert!(stats.arena.capacity > 0);

@@ -13,6 +13,8 @@
 # - JSON additionalContext = Swarm coordination messages
 
 set -euo pipefail
+export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
+umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -24,9 +26,11 @@ HANDOFFS_DIR="$SWARM_DIR/handoffs"
 AGENTS_FILE="$SWARM_DIR/agents.json"
 STATS_FILE="$SWARM_DIR/stats.json"
 
-# Agent identity
-AGENT_ID="${AGENTIC_FLOW_AGENT_ID:-agent_$(date +%s)_$(head -c 4 /dev/urandom | xxd -p)}"
-AGENT_NAME="${AGENTIC_FLOW_AGENT_NAME:-claude-code}"
+# Agent identity - sanitize env vars to prevent injection (allow only alphanumeric, underscore, hyphen)
+_raw_agent_id="${AGENTIC_FLOW_AGENT_ID:-agent_$(date +%s)_$(head -c 4 /dev/urandom | xxd -p)}"
+AGENT_ID="${_raw_agent_id//[^a-zA-Z0-9_-]/}"
+_raw_agent_name="${AGENTIC_FLOW_AGENT_NAME:-claude-code}"
+AGENT_NAME="${_raw_agent_name//[^a-zA-Z0-9_-]/}"
 
 # Initialize directories
 mkdir -p "$MESSAGES_DIR" "$PATTERNS_DIR" "$CONSENSUS_DIR" "$HANDOFFS_DIR"
@@ -60,7 +64,9 @@ update_stat() {
   if command -v jq &>/dev/null; then
     local current=$(jq -r ".$key // 0" "$STATS_FILE")
     local new=$((current + increment))
-    jq ".$key = $new | .lastUpdated = \"$(date -Iseconds)\"" "$STATS_FILE" > "$STATS_FILE.tmp" && mv "$STATS_FILE.tmp" "$STATS_FILE"
+    local tmp_file
+    tmp_file=$(mktemp)
+    jq ".$key = $new | .lastUpdated = \"$(date -Iseconds)\"" "$STATS_FILE" > "$tmp_file" && mv "$tmp_file" "$STATS_FILE"
   fi
 }
 
@@ -77,10 +83,14 @@ register_agent() {
     local exists=$(jq -r ".agents[] | select(.id == \"$AGENT_ID\") | .id" "$AGENTS_FILE" 2>/dev/null || echo "")
 
     if [ -z "$exists" ]; then
-      jq ".agents += [{\"id\":\"$AGENT_ID\",\"name\":\"$AGENT_NAME\",\"status\":\"active\",\"lastSeen\":$timestamp}]" "$AGENTS_FILE" > "$AGENTS_FILE.tmp" && mv "$AGENTS_FILE.tmp" "$AGENTS_FILE"
+      local tmp_file
+      tmp_file=$(mktemp)
+      jq ".agents += [{\"id\":\"$AGENT_ID\",\"name\":\"$AGENT_NAME\",\"status\":\"active\",\"lastSeen\":$timestamp}]" "$AGENTS_FILE" > "$tmp_file" && mv "$tmp_file" "$AGENTS_FILE"
     else
       # Update lastSeen
-      jq "(.agents[] | select(.id == \"$AGENT_ID\")).lastSeen = $timestamp" "$AGENTS_FILE" > "$AGENTS_FILE.tmp" && mv "$AGENTS_FILE.tmp" "$AGENTS_FILE"
+      local tmp_file
+      tmp_file=$(mktemp)
+      jq "(.agents[] | select(.id == \"$AGENT_ID\")).lastSeen = $timestamp" "$AGENTS_FILE" > "$tmp_file" && mv "$tmp_file" "$AGENTS_FILE"
     fi
   fi
 }
@@ -147,7 +157,9 @@ get_messages() {
           count=$((count + 1))
 
           # Mark as read
-          jq '.read = true' "$msg_file" > "$msg_file.tmp" && mv "$msg_file.tmp" "$msg_file"
+          local tmp_file
+          tmp_file=$(mktemp)
+          jq '.read = true' "$msg_file" > "$tmp_file" && mv "$tmp_file" "$msg_file"
         fi
       fi
     fi
@@ -252,7 +264,9 @@ import_pattern() {
 
   # Acknowledge the broadcast
   if command -v jq &>/dev/null; then
-    jq ".acknowledgments += [\"$AGENT_ID\"]" "$bc_file" > "$bc_file.tmp" && mv "$bc_file.tmp" "$bc_file"
+    local tmp_file
+    tmp_file=$(mktemp)
+    jq ".acknowledgments += [\"$AGENT_ID\"]" "$bc_file" > "$tmp_file" && mv "$tmp_file" "$bc_file"
 
     # Import to local learning
     local strategy=$(jq -r '.pattern.strategy' "$bc_file")
@@ -344,7 +358,9 @@ vote_consensus() {
     fi
 
     # Record vote
-    jq ".votes[\"$AGENT_ID\"] = \"$vote\"" "$cons_file" > "$cons_file.tmp" && mv "$cons_file.tmp" "$cons_file"
+    local tmp_file
+    tmp_file=$(mktemp)
+    jq ".votes[\"$AGENT_ID\"] = \"$vote\"" "$cons_file" > "$tmp_file" && mv "$tmp_file" "$cons_file"
 
     echo "{\"accepted\": true, \"consensusId\": \"$cons_id\", \"vote\": \"$vote\"}"
   fi
@@ -379,7 +395,9 @@ resolve_consensus() {
     fi
 
     # Update status
-    jq ".status = \"resolved\" | .result = {\"winner\": \"$winner\", \"confidence\": $confidence, \"totalVotes\": $total}" "$cons_file" > "$cons_file.tmp" && mv "$cons_file.tmp" "$cons_file"
+    local tmp_file
+    tmp_file=$(mktemp)
+    jq ".status = \"resolved\" | .result = {\"winner\": \"$winner\", \"confidence\": $confidence, \"totalVotes\": $total}" "$cons_file" > "$tmp_file" && mv "$tmp_file" "$cons_file"
 
     update_stat "consensusResolved"
 
@@ -504,7 +522,9 @@ accept_handoff() {
   fi
 
   if command -v jq &>/dev/null; then
-    jq ".status = \"accepted\" | .acceptedAt = $(date +%s)" "$ho_file" > "$ho_file.tmp" && mv "$ho_file.tmp" "$ho_file"
+    local tmp_file
+    tmp_file=$(mktemp)
+    jq ".status = \"accepted\" | .acceptedAt = $(date +%s)" "$ho_file" > "$tmp_file" && mv "$tmp_file" "$ho_file"
 
     # Generate context for Claude
     local description=$(jq -r '.description' "$ho_file")
@@ -544,7 +564,9 @@ complete_handoff() {
   fi
 
   if command -v jq &>/dev/null; then
-    jq ".status = \"completed\" | .completedAt = $(date +%s) | .result = $result_json" "$ho_file" > "$ho_file.tmp" && mv "$ho_file.tmp" "$ho_file"
+    local tmp_file
+    tmp_file=$(mktemp)
+    jq ".status = \"completed\" | .completedAt = $(date +%s) | .result = $result_json" "$ho_file" > "$tmp_file" && mv "$tmp_file" "$ho_file"
 
     update_stat "handoffsCompleted"
 

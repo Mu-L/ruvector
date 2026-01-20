@@ -125,6 +125,7 @@ pub fn default_cache_dir() -> PathBuf {
 pub fn get_hf_token() -> Option<String> {
     std::env::var("HF_TOKEN")
         .or_else(|_| std::env::var("HUGGING_FACE_HUB_TOKEN"))
+        .or_else(|_| std::env::var("HUGGINGFACE_API_KEY"))
         .ok()
 }
 

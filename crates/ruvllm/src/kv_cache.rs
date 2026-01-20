@@ -1071,8 +1071,12 @@ impl PooledKvBlock {
         let stride = num_heads * head_dim;
         let bytes_needed = max_tokens * stride * std::mem::size_of::<f32>();
 
-        let keys = pool.acquire_for_size(bytes_needed)?;
-        let values = pool.acquire_for_size(bytes_needed)?;
+        // acquire_for_size returns Result<Option<PooledBuffer>>
+        // - Err: allocation failure
+        // - Ok(None): size too large for any size class
+        // - Ok(Some): success
+        let keys = pool.acquire_for_size(bytes_needed).ok()??;
+        let values = pool.acquire_for_size(bytes_needed).ok()??;
 
         Some(Self {
             keys,

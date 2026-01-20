@@ -254,36 +254,83 @@ pub struct CacheAlignedVec {
 
 impl CacheAlignedVec {
     /// Create a new cache-aligned vector with the given capacity
+    ///
+    /// # Panics
+    ///
+    /// Panics if memory allocation fails. For fallible allocation,
+    /// use `try_with_capacity`.
     pub fn with_capacity(capacity: usize) -> Self {
+        Self::try_with_capacity(capacity)
+            .expect("Failed to allocate cache-aligned memory")
+    }
+
+    /// Try to create a new cache-aligned vector with the given capacity
+    ///
+    /// Returns `None` if memory allocation fails.
+    pub fn try_with_capacity(capacity: usize) -> Option<Self> {
+        // Handle zero capacity case
+        if capacity == 0 {
+            return Some(Self {
+                data: std::ptr::null_mut(),
+                len: 0,
+                capacity: 0,
+            });
+        }
+
         // Allocate cache-line aligned memory
         let layout = Layout::from_size_align(
             capacity * std::mem::size_of::<f32>(),
             CACHE_LINE_SIZE,
         )
-        .expect("Invalid layout");
+        .ok()?;
 
         let data = unsafe { alloc(layout) as *mut f32 };
 
-        Self {
+        // SECURITY: Check for allocation failure
+        if data.is_null() {
+            return None;
+        }
+
+        Some(Self {
             data,
             len: 0,
             capacity,
-        }
+        })
     }
 
     /// Create from an existing slice, copying data to cache-aligned storage
+    ///
+    /// # Panics
+    ///
+    /// Panics if memory allocation fails. For fallible allocation,
+    /// use `try_from_slice`.
     pub fn from_slice(slice: &[f32]) -> Self {
-        let mut vec = Self::with_capacity(slice.len());
-        unsafe {
-            ptr::copy_nonoverlapping(slice.as_ptr(), vec.data, slice.len());
+        Self::try_from_slice(slice)
+            .expect("Failed to allocate cache-aligned memory for slice")
+    }
+
+    /// Try to create from an existing slice, copying data to cache-aligned storage
+    ///
+    /// Returns `None` if memory allocation fails.
+    pub fn try_from_slice(slice: &[f32]) -> Option<Self> {
+        let mut vec = Self::try_with_capacity(slice.len())?;
+        if !slice.is_empty() {
+            unsafe {
+                ptr::copy_nonoverlapping(slice.as_ptr(), vec.data, slice.len());
+            }
         }
         vec.len = slice.len();
-        vec
+        Some(vec)
     }
 
     /// Push an element
+    ///
+    /// # Panics
+    ///
+    /// Panics if capacity is exceeded or if the vector has zero capacity.
     pub fn push(&mut self, value: f32) {
         assert!(self.len < self.capacity, "CacheAlignedVec capacity exceeded");
+        assert!(!self.data.is_null(), "Cannot push to zero-capacity CacheAlignedVec");
         unsafe {
             *self.data.add(self.len) = value;
         }
@@ -311,12 +358,22 @@ impl CacheAlignedVec {
     /// Get as slice
     #[inline]
     pub fn as_slice(&self) -> &[f32] {
+        if self.len == 0 {
+            // SAFETY: Empty slice doesn't require valid pointer
+            return &[];
+        }
+        // SAFETY: data is valid for len elements when len > 0
         unsafe { std::slice::from_raw_parts(self.data, self.len) }
     }
 
     /// Get as mutable slice
     #[inline]
     pub fn as_mut_slice(&mut self) -> &mut [f32] {
+        if self.len == 0 {
+            // SAFETY: Empty slice doesn't require valid pointer
+            return &mut [];
+        }
+        // SAFETY: data is valid for len elements when len > 0
         unsafe { std::slice::from_raw_parts_mut(self.data, self.len) }
     }
 
@@ -333,8 +390,14 @@ impl CacheAlignedVec {
     }
 
     /// Check if properly aligned for SIMD
+    ///
+    /// Returns `true` for zero-capacity vectors (considered trivially aligned).
     #[inline]
     pub fn is_aligned(&self) -> bool {
+        if self.data.is_null() {
+            // Zero-capacity vectors are considered aligned
+            return self.capacity == 0;
+        }
         (self.data as usize) % CACHE_LINE_SIZE == 0
     }
 
@@ -391,26 +454,58 @@ pub struct BatchVectorAllocator {
 
 impl BatchVectorAllocator {
     /// Create allocator for vectors of given dimensions
+    ///
+    /// # Panics
+    ///
+    /// Panics if memory allocation fails. For fallible allocation,
+    /// use `try_new`.
     pub fn new(dimensions: usize, initial_capacity: usize) -> Self {
+        Self::try_new(dimensions, initial_capacity)
+            .expect("Failed to allocate batch vector storage")
+    }
+
+    /// Try to create allocator for vectors of given dimensions
+    ///
+    /// Returns `None` if memory allocation fails.
+    pub fn try_new(dimensions: usize, initial_capacity: usize) -> Option<Self> {
+        // Handle zero capacity case
+        if dimensions == 0 || initial_capacity == 0 {
+            return Some(Self {
+                data: std::ptr::null_mut(),
+                dimensions,
+                capacity: initial_capacity,
+                count: 0,
+            });
+        }
+
         let total_floats = dimensions * initial_capacity;
 
         let layout = Layout::from_size_align(
             total_floats * std::mem::size_of::<f32>(),
             CACHE_LINE_SIZE,
         )
-        .expect("Invalid layout");
+        .ok()?;
 
         let data = unsafe { alloc(layout) as *mut f32 };
 
-        Self {
+        // SECURITY: Check for allocation failure
+        if data.is_null() {
+            return None;
+        }
+
+        Some(Self {
             data,
             dimensions,
             capacity: initial_capacity,
             count: 0,
-        }
+        })
     }
 
     /// Add a vector, returns its index
+    ///
+    /// # Panics
+    ///
+    /// Panics if the allocator is full, dimensions mismatch, or allocator has zero capacity.
     pub fn add(&mut self, vector: &[f32]) -> usize {
         assert_eq!(
             vector.len(),
@@ -418,6 +513,7 @@ impl BatchVectorAllocator {
             "Vector dimension mismatch"
         );
         assert!(self.count < self.capacity, "Batch allocator full");
+        assert!(!self.data.is_null(), "Cannot add to zero-capacity BatchVectorAllocator");
 
         let offset = self.count * self.dimensions;
         unsafe {

@@ -234,6 +234,11 @@ pub fn gemv_accelerate(
     debug_assert_eq!(x.len(), n, "Vector x size mismatch: expected {}, got {}", n, x.len());
     debug_assert_eq!(y.len(), m, "Vector y size mismatch: expected {}, got {}", m, y.len());
 
+    // SECURITY FIX (H-005): Bounds check before i32 cast to prevent overflow
+    // BLAS uses i32 for dimensions, so we must ensure values fit
+    assert!(m <= i32::MAX as usize, "Matrix dimension m={} exceeds i32::MAX for BLAS", m);
+    assert!(n <= i32::MAX as usize, "Matrix dimension n={} exceeds i32::MAX for BLAS", n);
+
     unsafe {
         gemv_accelerate_unchecked(a, x, y, m, n, layout);
     }
@@ -307,6 +312,10 @@ pub fn gemv_transpose_accelerate(
     debug_assert_eq!(x.len(), m); // Note: x length is m for transpose
     debug_assert_eq!(y.len(), n); // Note: y length is n for transpose
 
+    // SECURITY FIX (H-005): Bounds check before i32 cast to prevent overflow
+    assert!(m <= i32::MAX as usize, "Matrix dimension m={} exceeds i32::MAX for BLAS", m);
+    assert!(n <= i32::MAX as usize, "Matrix dimension n={} exceeds i32::MAX for BLAS", n);
+
     unsafe {
         let order = CblasOrder::from(layout) as i32;
         let trans = CblasTranspose::Trans as i32;
@@ -363,6 +372,10 @@ pub fn gemv_scaled_accelerate(
     debug_assert_eq!(x.len(), n);
     debug_assert_eq!(y.len(), m);
 
+    // SECURITY FIX (H-005): Bounds check before i32 cast to prevent overflow
+    assert!(m <= i32::MAX as usize, "Matrix dimension m={} exceeds i32::MAX for BLAS", m);
+    assert!(n <= i32::MAX as usize, "Matrix dimension n={} exceeds i32::MAX for BLAS", n);
+
     unsafe {
         let order = CblasOrder::from(layout) as i32;
         let trans = CblasTranspose::NoTrans as i32;
@@ -416,6 +429,11 @@ pub fn gemm_accelerate(
     debug_assert_eq!(a.len(), m * k);
     debug_assert_eq!(b.len(), k * n);
     debug_assert_eq!(c.len(), m * n);
+
+    // SECURITY FIX (H-005): Bounds check before i32 cast to prevent overflow
+    assert!(m <= i32::MAX as usize, "Matrix dimension m={} exceeds i32::MAX for BLAS", m);
+    assert!(k <= i32::MAX as usize, "Matrix dimension k={} exceeds i32::MAX for BLAS", k);
+    assert!(n <= i32::MAX as usize, "Matrix dimension n={} exceeds i32::MAX for BLAS", n);
 
     unsafe {
         cblas_sgemm(

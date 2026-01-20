@@ -423,12 +423,12 @@ mod memory_pool_tests {
         let pool = BufferPool::new();
 
         // Pre-warm the pool
-        pool.prewarm_all(4);
+        pool.prewarm_all(4).expect("prewarm failed");
 
         // Simulate multiple generation steps
         for step in 0..10 {
             // Acquire buffers for KV cache
-            let kv_buffer = pool.acquire(BufferSize::KB64);
+            let kv_buffer = pool.acquire(BufferSize::KB64).expect("acquire failed");
             assert_eq!(kv_buffer.capacity(), 65536);
 
             // Simulate processing
@@ -455,7 +455,7 @@ mod memory_pool_tests {
     /// Test streaming with memory pool
     #[test]
     fn test_streaming_with_pool() {
-        let manager = MemoryManager::new();
+        let manager = MemoryManager::new().expect("manager creation failed");
 
         // Simulate streaming generation
         for token_idx in 0..100 {
@@ -470,11 +470,11 @@ mod memory_pool_tests {
             logits[0] = token_idx as f32 * 0.1;
 
             // Acquire KV cache buffer from pool
-            let kv_buf = manager.pool.acquire(BufferSize::KB16);
+            let kv_buf = manager.pool.acquire(BufferSize::KB16).expect("acquire failed");
             assert!(kv_buf.capacity() >= 16384);
 
             // Use scratch space for intermediate computations
-            let mut scratch = manager.scratch.get_scratch();
+            let mut scratch = manager.scratch.get_scratch().expect("get_scratch failed");
             if let Some(temp) = scratch.get::<f32>(256) {
                 temp.fill(1.0);
                 assert_eq!(temp.len(), 256);
@@ -493,7 +493,7 @@ mod memory_pool_tests {
     /// Test arena allocation and reset cycle
     #[test]
     fn test_arena_allocation_cycle() {
-        let arena = InferenceArena::new(4 * 1024 * 1024); // 4MB
+        let arena = InferenceArena::new(4 * 1024 * 1024).expect("arena creation failed"); // 4MB
 
         for cycle in 0..50 {
             // Allocate various buffer sizes
@@ -527,7 +527,7 @@ mod memory_pool_tests {
 
         // Acquire and release same size multiple times
         for _ in 0..20 {
-            let buf = pool.acquire(BufferSize::KB4);
+            let buf = pool.acquire(BufferSize::KB4).expect("acquire failed");
             assert_eq!(buf.capacity(), 4096);
             // Buffer returns to pool on drop
         }
@@ -547,14 +547,14 @@ mod memory_pool_tests {
         use std::sync::Arc;
         use std::thread;
 
-        let manager = Arc::new(ScratchSpaceManager::new(8192, 8));
+        let manager = Arc::new(ScratchSpaceManager::new(8192, 8).expect("manager creation failed"));
 
         let handles: Vec<_> = (0..4)
             .map(|thread_id| {
                 let manager = Arc::clone(&manager);
                 thread::spawn(move || {
                     for _ in 0..10 {
-                        let mut scratch = manager.get_scratch();
+                        let mut scratch = manager.get_scratch().expect("get_scratch failed");
 
                         // Each thread writes its ID
                         if let Some(buf) = scratch.get::<u32>(100) {
@@ -587,7 +587,7 @@ mod memory_pool_tests {
             1,      // batch_size
         );
 
-        let manager = MemoryManager::with_config(config);
+        let manager = MemoryManager::with_config(config).expect("manager creation failed");
 
         // Verify adequate capacity
         assert!(manager.arena.capacity() > 2560 * 4 * 4); // At least hidden_dim * 4 * sizeof(f32)
@@ -610,23 +610,23 @@ mod memory_pool_tests {
         let pool = BufferPool::new();
 
         // Test automatic size class selection
-        if let Some(buf) = pool.acquire_for_size(500) {
+        if let Some(buf) = pool.acquire_for_size(500).ok().flatten() {
             assert!(buf.capacity() >= 500);
             assert_eq!(buf.size_class(), BufferSize::KB1);
         }
 
-        if let Some(buf) = pool.acquire_for_size(3000) {
+        if let Some(buf) = pool.acquire_for_size(3000).ok().flatten() {
             assert!(buf.capacity() >= 3000);
             assert_eq!(buf.size_class(), BufferSize::KB4);
         }
 
-        if let Some(buf) = pool.acquire_for_size(100000) {
+        if let Some(buf) = pool.acquire_for_size(100000).ok().flatten() {
             assert!(buf.capacity() >= 100000);
             assert_eq!(buf.size_class(), BufferSize::KB256);
         }
 
         // Size too large should return None
-        let too_large = pool.acquire_for_size(500000);
+        let too_large = pool.acquire_for_size(500000).ok().flatten();
         assert!(too_large.is_none(), "Should not find buffer for 500KB");
     }
 }

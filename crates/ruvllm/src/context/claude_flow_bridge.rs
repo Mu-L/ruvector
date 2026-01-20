@@ -419,6 +419,35 @@ impl ClaudeFlowMemoryBridge {
         cache.retain(|k, _| !k.starts_with(&format!("{}:", namespace)));
     }
 
+    /// Validate CLI argument to prevent command injection
+    fn validate_cli_arg(arg: &str) -> Result<&str> {
+        // Reject shell metacharacters
+        const FORBIDDEN: &[char] = &[
+            '$', ';', '|', '&', '`', '\n', '\r', '\\', '"', '\'', '<', '>', '(', ')', '{', '}',
+            '[', ']', '*', '?', '!', '#',
+        ];
+        if arg.chars().any(|c| FORBIDDEN.contains(&c)) {
+            return Err(RuvLLMError::InvalidOperation(format!(
+                "Invalid character in CLI argument: {}",
+                arg
+            )));
+        }
+        // Reject if starts with dash followed by dash (--) to prevent option injection
+        if arg.starts_with("--")
+            && arg.len() > 2
+            && !arg[2..]
+                .chars()
+                .next()
+                .map(|c| c.is_alphanumeric())
+                .unwrap_or(false)
+        {
+            return Err(RuvLLMError::InvalidOperation(
+                "Invalid CLI argument format".to_string(),
+            ));
+        }
+        Ok(arg)
+    }
+
     /// Execute CLI command
     fn execute_cli(&self, args: &[String]) -> Result<String> {
         let cli_parts: Vec<&str> = self.config.cli_command.split_whitespace().collect();
@@ -428,15 +457,23 @@ impl ClaudeFlowMemoryBridge {
             return Err(RuvLLMError::Config("Empty CLI command".to_string()));
         }
 
+        // Validate all provided arguments before execution
+        for arg in args {
+            Self::validate_cli_arg(arg).map_err(|e| {
+                self.stats.failures.fetch_add(1, Ordering::SeqCst);
+                e
+            })?;
+        }
+
         let program = cli_parts[0];
         let mut cmd = Command::new(program);
 
-        // Add base command args
+        // Add base command args (these are from config, assumed trusted)
         for part in &cli_parts[1..] {
             cmd.arg(part);
         }
 
-        // Add provided args
+        // Add provided args (already validated above)
         for arg in args {
             cmd.arg(arg);
         }

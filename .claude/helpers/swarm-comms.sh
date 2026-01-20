@@ -3,6 +3,8 @@
 # Non-blocking, batched, priority-based inter-agent messaging
 
 set -euo pipefail
+export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
+umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -152,13 +154,17 @@ pool_acquire() {
   local available=$(jq -r '.available[0] // ""' "$POOL_FILE" 2>/dev/null)
 
   if [ -n "$available" ]; then
-    # Reuse existing connection
-    jq ".available = .available[1:] | .inUse += [\"$available\"]" "$POOL_FILE" > "$POOL_FILE.tmp" && mv "$POOL_FILE.tmp" "$POOL_FILE"
+    # Reuse existing connection - use --arg to prevent injection
+    local tmp_file
+    tmp_file=$(mktemp)
+    jq --arg val "$available" '.available = .available[1:] | .inUse += [$val]' "$POOL_FILE" > "$tmp_file" && mv "$tmp_file" "$POOL_FILE"
     echo "$available"
   else
     # Create new connection ID
     local conn_id="conn_$(date +%s%N | tail -c 8)"
-    jq ".inUse += [\"$conn_id\"] | .activeConnections += 1" "$POOL_FILE" > "$POOL_FILE.tmp" && mv "$POOL_FILE.tmp" "$POOL_FILE"
+    local tmp_file
+    tmp_file=$(mktemp)
+    jq --arg val "$conn_id" '.inUse += [$val] | .activeConnections += 1' "$POOL_FILE" > "$tmp_file" && mv "$tmp_file" "$POOL_FILE"
     echo "$conn_id"
   fi
 }
@@ -168,7 +174,10 @@ pool_release() {
   local conn_id="${1:-}"
 
   if [ -f "$POOL_FILE" ]; then
-    jq ".inUse = (.inUse | map(select(. != \"$conn_id\"))) | .available += [\"$conn_id\"]" "$POOL_FILE" > "$POOL_FILE.tmp" && mv "$POOL_FILE.tmp" "$POOL_FILE"
+    local tmp_file
+    tmp_file=$(mktemp)
+    # Use --arg to prevent command injection
+    jq --arg val "$conn_id" '.inUse = (.inUse | map(select(. != $val))) | .available += [$val]' "$POOL_FILE" > "$tmp_file" && mv "$tmp_file" "$POOL_FILE"
   fi
 }
 
@@ -225,7 +234,9 @@ EOF
     (
       sleep "$timeout"
       if [ -f "$SWARM_DIR/consensus/$consensus_id.json" ]; then
-        jq '.status = "resolved"' "$SWARM_DIR/consensus/$consensus_id.json" > "$SWARM_DIR/consensus/$consensus_id.json.tmp" && mv "$SWARM_DIR/consensus/$consensus_id.json.tmp" "$SWARM_DIR/consensus/$consensus_id.json"
+        local tmp_file
+        tmp_file=$(mktemp)
+        jq '.status = "resolved"' "$SWARM_DIR/consensus/$consensus_id.json" > "$tmp_file" && mv "$tmp_file" "$SWARM_DIR/consensus/$consensus_id.json"
       fi
     ) &
 
@@ -237,12 +248,17 @@ EOF
 vote_async() {
   local consensus_id="${1:-}"
   local vote="${2:-}"
-  local agent_id="${AGENTIC_FLOW_AGENT_ID:-anonymous}"
+  # Sanitize agent_id to prevent injection
+  local raw_agent_id="${AGENTIC_FLOW_AGENT_ID:-anonymous}"
+  local agent_id="${raw_agent_id//[^a-zA-Z0-9_-]/}"
 
   (
     local file="$SWARM_DIR/consensus/$consensus_id.json"
     if [ -f "$file" ]; then
-      jq ".votes[\"$agent_id\"] = \"$vote\"" "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+      local tmp_file
+      tmp_file=$(mktemp)
+      # Use --arg to prevent command injection
+      jq --arg aid "$agent_id" --arg v "$vote" '.votes[$aid] = $v' "$file" > "$tmp_file" && mv "$tmp_file" "$file"
     fi
   ) &
 }

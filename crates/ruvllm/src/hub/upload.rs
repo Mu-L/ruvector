@@ -4,6 +4,81 @@ use super::{HubError, Result, get_hf_token};
 use super::model_card::{ModelCard, ModelCardBuilder};
 use std::path::{Path, PathBuf};
 use std::fs;
+use regex::Regex;
+
+// ============================================================================
+// Security: Input Validation (H-002)
+// ============================================================================
+
+/// Validate repo_id format (prevents CLI injection)
+/// Only allows: alphanumeric, /, -, _, .
+fn validate_repo_id(repo_id: &str) -> Result<()> {
+    // Must contain exactly one slash (user/repo format)
+    let slash_count = repo_id.chars().filter(|&c| c == '/').count();
+    if slash_count != 1 {
+        return Err(HubError::InvalidFormat(
+            "Repository ID must be in format 'username/repo-name'".to_string(),
+        ));
+    }
+
+    // Regex: only allow safe characters
+    let valid_pattern = Regex::new(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*/[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+        .expect("Invalid regex pattern");
+
+    if !valid_pattern.is_match(repo_id) {
+        return Err(HubError::InvalidFormat(format!(
+            "Repository ID '{}' contains invalid characters. Only alphanumeric, /, -, _, . are allowed",
+            repo_id
+        )));
+    }
+
+    // Prevent path traversal
+    if repo_id.contains("..") {
+        return Err(HubError::InvalidFormat(
+            "Repository ID cannot contain '..' (path traversal)".to_string(),
+        ));
+    }
+
+    // Prevent shell metacharacters that could be used for injection
+    let dangerous_chars = ['`', '$', '(', ')', ';', '&', '|', '<', '>', '\n', '\r', '"', '\'', '\\'];
+    for c in dangerous_chars {
+        if repo_id.contains(c) {
+            return Err(HubError::InvalidFormat(format!(
+                "Repository ID cannot contain shell metacharacter '{}'",
+                c
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate file path for upload (prevents path traversal)
+fn validate_upload_path(path: &Path) -> Result<()> {
+    let path_str = path.to_string_lossy();
+
+    // Prevent path traversal
+    if path_str.contains("..") {
+        return Err(HubError::InvalidFormat(
+            "File path cannot contain '..' (path traversal)".to_string(),
+        ));
+    }
+
+    // Canonicalize to resolve any symlinks and verify it exists
+    let canonical = path.canonicalize().map_err(|e| {
+        HubError::NotFound(format!("Cannot resolve path '{}': {}", path.display(), e))
+    })?;
+
+    // Verify the file exists and is a regular file
+    if !canonical.is_file() {
+        return Err(HubError::NotFound(format!(
+            "Path '{}' is not a regular file",
+            path.display()
+        )));
+    }
+
+    Ok(())
+}
 
 /// Upload configuration
 #[derive(Debug, Clone)]
@@ -149,19 +224,11 @@ impl ModelUploader {
     ) -> Result<String> {
         let model_path = model_path.as_ref();
 
-        // Validate model file exists
-        if !model_path.exists() {
-            return Err(HubError::NotFound(
-                model_path.display().to_string(),
-            ));
-        }
+        // SECURITY: Validate repository ID format (prevents CLI injection)
+        validate_repo_id(repo_id)?;
 
-        // Validate repository ID
-        if !repo_id.contains('/') {
-            return Err(HubError::InvalidFormat(
-                "Repository ID must be in format 'username/repo-name'".to_string(),
-            ));
-        }
+        // SECURITY: Validate and canonicalize file path (prevents path traversal)
+        validate_upload_path(model_path)?;
 
         // For now, use git-based upload via huggingface-cli
         // In production, this would use the HF API

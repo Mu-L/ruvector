@@ -7,6 +7,121 @@ use std::fs::{self, File};
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use sha2::{Sha256, Digest};
+use regex::Regex;
+
+// ============================================================================
+// Security: URL and Input Validation (H-001)
+// ============================================================================
+
+/// Allowed domains for HuggingFace downloads
+const ALLOWED_DOMAINS: &[&str] = &["huggingface.co", "hf.co", "cdn-lfs.huggingface.co"];
+
+/// Validate URL is from allowed HuggingFace domains
+fn validate_url(url: &str) -> Result<()> {
+    // Parse the URL to extract the host
+    let url_lower = url.to_lowercase();
+
+    // Check for valid HTTPS scheme
+    if !url_lower.starts_with("https://") {
+        return Err(HubError::InvalidFormat(
+            "Only HTTPS URLs are allowed for downloads".to_string(),
+        ));
+    }
+
+    // Extract host from URL
+    let without_scheme = &url[8..]; // Skip "https://"
+    let host_end = without_scheme.find('/').unwrap_or(without_scheme.len());
+    let host = &without_scheme[..host_end];
+
+    // Remove port if present
+    let host = host.split(':').next().unwrap_or(host);
+
+    // Check against allowlist
+    let is_allowed = ALLOWED_DOMAINS.iter().any(|&domain| {
+        host == domain || host.ends_with(&format!(".{}", domain))
+    });
+
+    if !is_allowed {
+        return Err(HubError::InvalidFormat(format!(
+            "URL host '{}' is not in the allowed domains: {:?}",
+            host, ALLOWED_DOMAINS
+        )));
+    }
+
+    Ok(())
+}
+
+/// Validate repo_id format (prevents CLI injection)
+/// Only allows: alphanumeric, /, -, _, .
+fn validate_repo_id(repo_id: &str) -> Result<()> {
+    // Must contain exactly one slash (user/repo format)
+    let slash_count = repo_id.chars().filter(|&c| c == '/').count();
+    if slash_count != 1 {
+        return Err(HubError::InvalidFormat(
+            "Repository ID must be in format 'username/repo-name'".to_string(),
+        ));
+    }
+
+    // Regex: only allow safe characters
+    let valid_pattern = Regex::new(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*/[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+        .expect("Invalid regex pattern");
+
+    if !valid_pattern.is_match(repo_id) {
+        return Err(HubError::InvalidFormat(format!(
+            "Repository ID '{}' contains invalid characters. Only alphanumeric, /, -, _, . are allowed",
+            repo_id
+        )));
+    }
+
+    // Prevent path traversal
+    if repo_id.contains("..") {
+        return Err(HubError::InvalidFormat(
+            "Repository ID cannot contain '..' (path traversal)".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+/// Canonicalize and validate file path to prevent path traversal
+fn validate_and_canonicalize_path(path: &Path, base_dir: &Path) -> Result<PathBuf> {
+    // Canonicalize both paths
+    let canonical_base = base_dir.canonicalize().map_err(|e| {
+        HubError::Config(format!("Failed to canonicalize base directory: {}", e))
+    })?;
+
+    // Create parent directories if needed, then canonicalize
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    // For new files, canonicalize the parent and append filename
+    let canonical_path = if path.exists() {
+        path.canonicalize().map_err(|e| {
+            HubError::Config(format!("Failed to canonicalize path: {}", e))
+        })?
+    } else if let Some(parent) = path.parent() {
+        let canonical_parent = parent.canonicalize().map_err(|e| {
+            HubError::Config(format!("Failed to canonicalize parent path: {}", e))
+        })?;
+        canonical_parent.join(path.file_name().ok_or_else(|| {
+            HubError::InvalidFormat("Invalid file path".to_string())
+        })?)
+    } else {
+        return Err(HubError::InvalidFormat("Invalid file path".to_string()));
+    };
+
+    // Ensure the path is within the base directory
+    if !canonical_path.starts_with(&canonical_base) {
+        return Err(HubError::InvalidFormat(format!(
+            "Path '{}' is outside allowed directory '{}'",
+            canonical_path.display(),
+            canonical_base.display()
+        )));
+    }
+
+    Ok(canonical_path)
+}
 
 /// Download configuration
 #[derive(Debug, Clone)]
@@ -176,10 +291,8 @@ impl ModelDownloader {
             self.config.cache_dir.join(&model_info.filename)
         };
 
-        // Create parent directory
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
+        // SECURITY: Validate and canonicalize path to prevent path traversal
+        let path = validate_and_canonicalize_path(&path, &self.config.cache_dir)?;
 
         // Check if already downloaded
         if path.exists() && !self.config.resume {
@@ -193,6 +306,10 @@ impl ModelDownloader {
 
         // Download the file
         let url = model_info.download_url();
+
+        // SECURITY: Validate URL is from allowed domains
+        validate_url(&url)?;
+
         self.download_file(&url, &path, model_info.size_bytes, model_info.checksum.as_deref())?;
 
         Ok(path)

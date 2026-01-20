@@ -442,13 +442,18 @@ fn read_f64<R: Read>(reader: &mut R) -> Result<f64> {
     Ok(f64::from_le_bytes(buf))
 }
 
+/// Maximum allowed string size to prevent memory exhaustion attacks.
+/// SECURITY FIX (H-003): Reduced from 1MB to 64KB - sufficient for metadata strings
+/// while preventing memory-based DoS attacks from malicious GGUF files.
+const MAX_STRING_SIZE: usize = 65536; // 64KB
+
 fn read_string<R: Read>(reader: &mut R) -> Result<String> {
     let len = read_u64(reader)? as usize;
 
-    if len > 1024 * 1024 {
+    if len > MAX_STRING_SIZE {
         return Err(RuvLLMError::Model(format!(
-            "String too long: {} bytes",
-            len
+            "String too long: {} bytes (max: {} bytes)",
+            len, MAX_STRING_SIZE
         )));
     }
 
