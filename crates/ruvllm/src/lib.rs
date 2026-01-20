@@ -44,6 +44,7 @@
 pub mod adapter_manager;
 pub mod autodetect;
 pub mod backends;
+pub mod capabilities;
 pub mod claude_flow;
 pub mod error;
 pub mod gguf;
@@ -58,6 +59,7 @@ pub mod optimization;
 pub mod paged_attention;
 pub mod policy_store;
 pub mod quantize;
+pub mod ruvector_integration;
 pub mod serving;
 pub mod session;
 pub mod session_index;
@@ -114,6 +116,21 @@ pub use claude_flow::{
     AgentRouter, AgentType, RoutingDecision as AgentRoutingDecision,
     TaskClassifier, TaskType, ClassificationResult,
     FlowOptimizer, OptimizationConfig, OptimizationResult,
+    // HNSW semantic router (150x faster pattern search)
+    HnswRouter, HnswRouterConfig, HnswRouterStats, HnswRoutingResult,
+    HnswDistanceMetric, TaskPattern, HybridRouter,
+    // Claude API Integration (NEW)
+    ClaudeModel, MessageRole, ContentBlock, Message, ClaudeRequest, ClaudeResponse, UsageStats,
+    StreamToken, StreamEvent as ClaudeStreamEvent, QualityMonitor, ResponseStreamer, StreamStats,
+    ContextWindow, ContextManager,
+    AgentState, AgentContext, WorkflowStep, WorkflowResult, StepResult,
+    AgentCoordinator, CoordinatorStats,
+    CostEstimator, LatencyTracker, LatencySample, LatencyStats as ClaudeLatencyStats,
+    // Model Router (NEW) - Intelligent routing to Haiku/Sonnet/Opus
+    ComplexityFactors, ComplexityWeights, ComplexityScore,
+    TaskComplexityAnalyzer, AnalyzerStats as ModelAnalyzerStats,
+    SelectionCriteria, ModelRoutingDecision, ModelSelector, SelectorStats,
+    ModelRouter,
 };
 pub use optimization::{
     InferenceMetrics, MetricsCollector, MetricsSnapshot, MovingAverage, LatencyHistogram,
@@ -178,6 +195,21 @@ pub use models::{
     RuvLtraModel, RuvLtraAttention, RuvLtraMLP, RuvLtraDecoderLayer,
     // Utilities
     RuvLtraModelInfo, AneDispatcher,
+};
+
+// Ruvector integration exports (unified entry point for all Ruvector capabilities)
+pub use capabilities::{
+    RuvectorCapabilities, HNSW_AVAILABLE, ATTENTION_AVAILABLE, GRAPH_AVAILABLE,
+    GNN_AVAILABLE, SONA_AVAILABLE, SIMD_AVAILABLE, PARALLEL_AVAILABLE,
+    gate_feature, gate_feature_or,
+};
+pub use ruvector_integration::{
+    // Main integration
+    RuvectorIntegration, IntegrationConfig, IntegrationStats,
+    // Unified index
+    UnifiedIndex, VectorMetadata, IndexStats, SearchResultWithMetadata,
+    // Intelligence layer
+    IntelligenceLayer, IntelligentRoutingDecision, IntelligenceLayerStats,
 };
 
 // Metal GPU acceleration exports (macOS only)

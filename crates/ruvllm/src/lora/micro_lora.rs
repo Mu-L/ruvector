@@ -913,7 +913,7 @@ impl MicroLoRA {
     /// Save adapter state to bytes
     pub fn save(&self, path: &str) -> Result<()> {
         let state = self.export_state();
-        let bytes = bincode::serialize(&state)
+        let bytes = bincode::serde::encode_to_vec(&state, bincode::config::standard())
             .map_err(|e| RuvLLMError::Serialization(e.to_string()))?;
         std::fs::write(path, bytes)?;
         Ok(())
@@ -922,8 +922,9 @@ impl MicroLoRA {
     /// Load adapter state from bytes
     pub fn load(path: &str) -> Result<Self> {
         let bytes = std::fs::read(path)?;
-        let state: MicroLoraState = bincode::deserialize(&bytes)
-            .map_err(|e| RuvLLMError::Serialization(e.to_string()))?;
+        let (state, _): (MicroLoraState, usize) =
+            bincode::serde::decode_from_slice(&bytes, bincode::config::standard())
+                .map_err(|e| RuvLLMError::Serialization(e.to_string()))?;
         Self::from_state(state)
     }
 

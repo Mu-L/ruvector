@@ -24,11 +24,12 @@
 //! ```
 
 use ruvllm::backends::{
-    AneCapabilities, ComputeUnits, GenerateParams, LlmBackend,
+    GenerateParams, LlmBackend,
     ModelArchitecture, ModelConfig, Quantization,
 };
 use ruvllm::error::{Result, RuvLLMError};
 use ruvllm::gguf::quantization::GgufQuantType;
+use ruvllm::kernels::is_ane_available;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -131,7 +132,7 @@ mod full_inference_pipeline {
     impl MockModel {
         fn new(config: ModelConfig) -> Self {
             Self {
-                vocab_size: config.vocab_size,
+                vocab_size: config.vocab_size.unwrap_or(32000),
                 config,
             }
         }
@@ -162,28 +163,28 @@ mod full_inference_pipeline {
     fn test_pipeline_initialization() {
         let config = ModelConfig {
             architecture: ModelArchitecture::Llama,
-            quantization: Quantization::Q4K,
-            context_length: 8192,
-            rope_scaling: None,
-            vocab_size: 32000,
+            quantization: Some(Quantization::Q4K),
+            max_sequence_length: 8192,
+            vocab_size: Some(32000),
             use_flash_attention: true,
+            ..Default::default()
         };
 
         let model = MockModel::new(config.clone());
 
         assert_eq!(model.vocab_size, 32000);
-        assert_eq!(model.config.context_length, 8192);
+        assert_eq!(model.config.max_sequence_length, 8192);
     }
 
     #[test]
     fn test_simple_completion_pipeline() {
         let config = ModelConfig {
             architecture: ModelArchitecture::Llama,
-            quantization: Quantization::Q4K,
-            context_length: 4096,
-            rope_scaling: None,
-            vocab_size: 32000,
+            quantization: Some(Quantization::Q4K),
+            max_sequence_length: 4096,
+            vocab_size: Some(32000),
             use_flash_attention: false,
+            ..Default::default()
         };
 
         let model = MockModel::new(config);
@@ -204,11 +205,11 @@ mod full_inference_pipeline {
     fn test_instruction_following_pipeline() {
         let config = ModelConfig {
             architecture: ModelArchitecture::Llama,
-            quantization: Quantization::Q4K,
-            context_length: 4096,
-            rope_scaling: None,
-            vocab_size: 32000,
+            quantization: Some(Quantization::Q4K),
+            max_sequence_length: 4096,
+            vocab_size: Some(32000),
             use_flash_attention: true,
+            ..Default::default()
         };
 
         let model = MockModel::new(config);
@@ -224,11 +225,11 @@ mod full_inference_pipeline {
     fn test_qa_pipeline() {
         let config = ModelConfig {
             architecture: ModelArchitecture::Llama,
-            quantization: Quantization::Q4K,
-            context_length: 4096,
-            rope_scaling: None,
-            vocab_size: 32000,
+            quantization: Some(Quantization::Q4K),
+            max_sequence_length: 4096,
+            vocab_size: Some(32000),
             use_flash_attention: false,
+            ..Default::default()
         };
 
         let model = MockModel::new(config);
@@ -243,11 +244,11 @@ mod full_inference_pipeline {
     fn test_code_generation_pipeline() {
         let config = ModelConfig {
             architecture: ModelArchitecture::Llama,
-            quantization: Quantization::Q4K,
-            context_length: 4096,
-            rope_scaling: None,
-            vocab_size: 32000,
+            quantization: Some(Quantization::Q4K),
+            max_sequence_length: 4096,
+            vocab_size: Some(32000),
             use_flash_attention: true,
+            ..Default::default()
         };
 
         let model = MockModel::new(config);
@@ -264,11 +265,11 @@ mod full_inference_pipeline {
     fn test_conversation_pipeline() {
         let config = ModelConfig {
             architecture: ModelArchitecture::Llama,
-            quantization: Quantization::Q4K,
-            context_length: 4096,
-            rope_scaling: None,
-            vocab_size: 32000,
+            quantization: Some(Quantization::Q4K),
+            max_sequence_length: 4096,
+            vocab_size: Some(32000),
             use_flash_attention: true,
+            ..Default::default()
         };
 
         let model = MockModel::new(config);
@@ -283,11 +284,11 @@ mod full_inference_pipeline {
     fn test_minimal_prompt_handling() {
         let config = ModelConfig {
             architecture: ModelArchitecture::Llama,
-            quantization: Quantization::Q4K,
-            context_length: 4096,
-            rope_scaling: None,
-            vocab_size: 32000,
+            quantization: Some(Quantization::Q4K),
+            max_sequence_length: 4096,
+            vocab_size: Some(32000),
             use_flash_attention: false,
+            ..Default::default()
         };
 
         let model = MockModel::new(config);
@@ -303,11 +304,11 @@ mod full_inference_pipeline {
     fn test_long_prompt_handling() {
         let config = ModelConfig {
             architecture: ModelArchitecture::Llama,
-            quantization: Quantization::Q4K,
-            context_length: 4096,
-            rope_scaling: None,
-            vocab_size: 32000,
+            quantization: Some(Quantization::Q4K),
+            max_sequence_length: 4096,
+            vocab_size: Some(32000),
             use_flash_attention: true,
+            ..Default::default()
         };
 
         let model = MockModel::new(config);
@@ -322,11 +323,11 @@ mod full_inference_pipeline {
     fn test_empty_prompt_handling() {
         let config = ModelConfig {
             architecture: ModelArchitecture::Llama,
-            quantization: Quantization::Q4K,
-            context_length: 4096,
-            rope_scaling: None,
-            vocab_size: 32000,
+            quantization: Some(Quantization::Q4K),
+            max_sequence_length: 4096,
+            vocab_size: Some(32000),
             use_flash_attention: false,
+            ..Default::default()
         };
 
         let model = MockModel::new(config);

@@ -8,8 +8,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use parking_lot::RwLock;
 
+use serde::{Deserialize, Serialize};
+
 /// Agent type for routing
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum AgentType {
     /// Code implementation specialist
     Coder,
