@@ -48,6 +48,7 @@ pub mod capabilities;
 pub mod claude_flow;
 pub mod context;
 pub mod error;
+pub mod evaluation;
 pub mod gguf;
 pub mod hub;
 pub mod kernels;

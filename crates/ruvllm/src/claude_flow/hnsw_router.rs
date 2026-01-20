@@ -379,6 +379,11 @@ impl HnswRouter {
         })
     }
 
+    /// Get the router configuration
+    pub fn config(&self) -> &HnswRouterConfig {
+        &self.config
+    }
+
     /// Create with SONA integration for continuous learning
     pub fn with_sona(config: HnswRouterConfig, sona: Arc<RwLock<SonaIntegration>>) -> Result<Self> {
         let mut router = Self::new(config)?;
