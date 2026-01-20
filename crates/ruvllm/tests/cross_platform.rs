@@ -3,7 +3,7 @@
 //! These tests verify that the scalar fallback implementations produce
 //! correct results and work on all platforms (including non-NEON and WASM).
 
-use ruvllm_integration::kernels::{
+use ruvllm::kernels::{
     flash_attention_neon, gemm_neon, gemv_neon, layer_norm_neon, rms_norm_neon,
 };
 

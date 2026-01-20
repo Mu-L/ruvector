@@ -3,7 +3,7 @@
 //! Tests attention, RoPE, normalization, and matrix multiplication kernels
 //! comparing NEON implementations to scalar reference implementations.
 
-use ruvllm_integration::kernels::{
+use ruvllm::kernels::{
     flash_attention_neon, grouped_query_attention_neon, multi_query_attention_neon,
     paged_attention_neon, PagedKvCache,
     gemm_neon, gemv_neon, batched_gemm_neon,
@@ -11,11 +11,11 @@ use ruvllm_integration::kernels::{
     apply_rope_neon, precompute_rope_tables, RopeConfig,
     AttentionConfig,
 };
-use ruvllm_integration::kernels::rope::{
+use ruvllm::kernels::rope::{
     apply_inverse_rope_neon, apply_rope_with_tables, precompute_rope_tables_with_config, RopeTables,
 };
-use ruvllm_integration::kernels::norm::{batched_layer_norm_neon, batched_rms_norm_neon, compute_rms};
-use ruvllm_integration::kernels::matmul::gemm_nt_neon;
+use ruvllm::kernels::norm::{batched_layer_norm_neon, batched_rms_norm_neon, compute_rms};
+use ruvllm::kernels::matmul::gemm_nt_neon;
 
 // ========== Attention Tests ==========
 
@@ -888,7 +888,7 @@ fn test_flash_attention_v2_numerical_stability() {
 
 #[cfg(target_arch = "aarch64")]
 mod quantized_tests {
-    use ruvllm_integration::kernels::quantized::{
+    use ruvllm::kernels::quantized::{
         quantize_to_int8, dequantize_int8, int8_gemv_neon,
         quantize_to_int4, dequantize_int4, int4_gemv_neon,
         INT4_BLOCK_SIZE,

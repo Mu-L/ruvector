@@ -7,12 +7,12 @@
 //!
 //! ANE benchmarks (requires macOS with coreml feature):
 //! ```bash
-//! cargo bench -p ruvllm-integration --features coreml --bench ane_bench
+//! cargo bench -p ruvllm --features coreml --bench ane_bench
 //! ```
 //!
 //! Compare ANE vs Accelerate:
 //! ```bash
-//! cargo bench -p ruvllm-integration --features coreml,accelerate --bench ane_bench
+//! cargo bench -p ruvllm --features coreml,accelerate --bench ane_bench
 //! ```
 //!
 //! ## Performance Targets (M4 Pro)
@@ -124,7 +124,7 @@ fn bench_gemm_comparison(c: &mut Criterion) {
             let id = BenchmarkId::new("accelerate", &id_suffix);
             group.bench_function(id, |bencher| {
                 bencher.iter(|| {
-                    ruvllm_integration::kernels::accelerate::gemm_accelerate(
+                    ruvllm::kernels::accelerate::gemm_accelerate(
                         black_box(&a),
                         black_box(&b),
                         black_box(&mut c_out),
@@ -140,7 +140,7 @@ fn bench_gemm_comparison(c: &mut Criterion) {
             let id = BenchmarkId::new("ane", &id_suffix);
             group.bench_function(id, |bencher| {
                 bencher.iter(|| {
-                    ruvllm_integration::kernels::ane_ops::matmul_ane(
+                    ruvllm::kernels::ane_ops::matmul_ane(
                         black_box(&a),
                         black_box(&b),
                         black_box(&mut c_out),
@@ -204,7 +204,7 @@ fn bench_batched_gemm_comparison(c: &mut Criterion) {
             let id = BenchmarkId::new("ane", &id_suffix);
             group.bench_function(id, |bencher| {
                 bencher.iter(|| {
-                    ruvllm_integration::kernels::ane_ops::batched_matmul_ane(
+                    ruvllm::kernels::ane_ops::batched_matmul_ane(
                         black_box(&a),
                         black_box(&b),
                         black_box(&mut c_out),
@@ -254,7 +254,7 @@ fn bench_gelu_comparison(c: &mut Criterion) {
             group.bench_function(id, |bencher| {
                 bencher.iter(|| {
                     x.copy_from_slice(&x_orig);
-                    ruvllm_integration::kernels::activations::batch_gelu(
+                    ruvllm::kernels::activations::batch_gelu(
                         black_box(&mut x),
                         dim,
                     );
@@ -270,7 +270,7 @@ fn bench_gelu_comparison(c: &mut Criterion) {
             group.bench_function(id, |bencher| {
                 bencher.iter(|| {
                     x.copy_from_slice(&x_orig);
-                    ruvllm_integration::kernels::ane_ops::gelu_ane(
+                    ruvllm::kernels::ane_ops::gelu_ane(
                         black_box(&mut x),
                         batch_size,
                         dim,
@@ -314,7 +314,7 @@ fn bench_silu_comparison(c: &mut Criterion) {
             group.bench_function(id, |bencher| {
                 bencher.iter(|| {
                     x.copy_from_slice(&x_orig);
-                    ruvllm_integration::kernels::activations::batch_silu(
+                    ruvllm::kernels::activations::batch_silu(
                         black_box(&mut x),
                         dim,
                     );
@@ -330,7 +330,7 @@ fn bench_silu_comparison(c: &mut Criterion) {
             group.bench_function(id, |bencher| {
                 bencher.iter(|| {
                     x.copy_from_slice(&x_orig);
-                    ruvllm_integration::kernels::ane_ops::silu_ane(
+                    ruvllm::kernels::ane_ops::silu_ane(
                         black_box(&mut x),
                         batch_size,
                         dim,
@@ -374,7 +374,7 @@ fn bench_softmax_comparison(c: &mut Criterion) {
             group.bench_function(id, |bencher| {
                 bencher.iter(|| {
                     x.copy_from_slice(&x_orig);
-                    ruvllm_integration::kernels::activations::batch_softmax(
+                    ruvllm::kernels::activations::batch_softmax(
                         black_box(&mut x),
                         dim,
                     );
@@ -390,7 +390,7 @@ fn bench_softmax_comparison(c: &mut Criterion) {
             group.bench_function(id, |bencher| {
                 bencher.iter(|| {
                     x.copy_from_slice(&x_orig);
-                    ruvllm_integration::kernels::ane_ops::softmax_ane(
+                    ruvllm::kernels::ane_ops::softmax_ane(
                         black_box(&mut x),
                         batch_size,
                         dim,
@@ -439,7 +439,7 @@ fn bench_layer_norm_comparison(c: &mut Criterion) {
             group.bench_function(id, |bencher| {
                 bencher.iter(|| {
                     x.copy_from_slice(&x_orig);
-                    ruvllm_integration::kernels::norm::batched_layer_norm_neon(
+                    ruvllm::kernels::norm::batched_layer_norm_neon(
                         black_box(&mut x),
                         black_box(&weight),
                         black_box(&bias),
@@ -459,7 +459,7 @@ fn bench_layer_norm_comparison(c: &mut Criterion) {
             group.bench_function(id, |bencher| {
                 bencher.iter(|| {
                     x.copy_from_slice(&x_orig);
-                    ruvllm_integration::kernels::ane_ops::layer_norm_ane(
+                    ruvllm::kernels::ane_ops::layer_norm_ane(
                         black_box(&mut x),
                         black_box(&weight),
                         black_box(&bias),
@@ -506,7 +506,7 @@ fn bench_rms_norm_comparison(c: &mut Criterion) {
             group.bench_function(id, |bencher| {
                 bencher.iter(|| {
                     x.copy_from_slice(&x_orig);
-                    ruvllm_integration::kernels::norm::batched_rms_norm_neon(
+                    ruvllm::kernels::norm::batched_rms_norm_neon(
                         black_box(&mut x),
                         black_box(&weight),
                         batch_size,
@@ -525,7 +525,7 @@ fn bench_rms_norm_comparison(c: &mut Criterion) {
             group.bench_function(id, |bencher| {
                 bencher.iter(|| {
                     x.copy_from_slice(&x_orig);
-                    ruvllm_integration::kernels::ane_ops::rms_norm_ane(
+                    ruvllm::kernels::ane_ops::rms_norm_ane(
                         black_box(&mut x),
                         black_box(&weight),
                         batch_size,
@@ -564,13 +564,13 @@ fn bench_auto_dispatch(c: &mut Criterion) {
             bencher.iter(|| {
                 x.copy_from_slice(&x_orig);
                 #[cfg(all(target_os = "macos", feature = "coreml"))]
-                ruvllm_integration::kernels::ane_ops::gelu_auto(
+                ruvllm::kernels::ane_ops::gelu_auto(
                     black_box(&mut x),
                     batch_size,
                     dim,
                 );
                 #[cfg(not(all(target_os = "macos", feature = "coreml")))]
-                ruvllm_integration::kernels::activations::batch_gelu(
+                ruvllm::kernels::activations::batch_gelu(
                     black_box(&mut x),
                     dim,
                 );
@@ -585,13 +585,13 @@ fn bench_auto_dispatch(c: &mut Criterion) {
             bencher.iter(|| {
                 x.copy_from_slice(&x_orig);
                 #[cfg(all(target_os = "macos", feature = "coreml"))]
-                ruvllm_integration::kernels::ane_ops::silu_auto(
+                ruvllm::kernels::ane_ops::silu_auto(
                     black_box(&mut x),
                     batch_size,
                     dim,
                 );
                 #[cfg(not(all(target_os = "macos", feature = "coreml")))]
-                ruvllm_integration::kernels::activations::batch_silu(
+                ruvllm::kernels::activations::batch_silu(
                     black_box(&mut x),
                     dim,
                 );
@@ -606,7 +606,7 @@ fn bench_auto_dispatch(c: &mut Criterion) {
             bencher.iter(|| {
                 x.copy_from_slice(&x_orig);
                 #[cfg(all(target_os = "macos", feature = "coreml"))]
-                ruvllm_integration::kernels::ane_ops::layer_norm_auto(
+                ruvllm::kernels::ane_ops::layer_norm_auto(
                     black_box(&mut x),
                     black_box(&weight),
                     black_box(&bias),
@@ -615,7 +615,7 @@ fn bench_auto_dispatch(c: &mut Criterion) {
                     1e-6,
                 );
                 #[cfg(not(all(target_os = "macos", feature = "coreml")))]
-                ruvllm_integration::kernels::norm::batched_layer_norm_neon(
+                ruvllm::kernels::norm::batched_layer_norm_neon(
                     black_box(&mut x),
                     black_box(&weight),
                     black_box(&bias),
@@ -672,7 +672,7 @@ fn bench_mlp_block(c: &mut Criterion) {
                     batch_size, hidden_dim, intermediate_dim,
                 );
                 // SiLU activation
-                ruvllm_integration::kernels::activations::batch_silu(
+                ruvllm::kernels::activations::batch_silu(
                     black_box(&mut intermediate),
                     intermediate_dim,
                 );
@@ -693,20 +693,20 @@ fn bench_mlp_block(c: &mut Criterion) {
         group.bench_function("ane", |bencher| {
             bencher.iter(|| {
                 // Up projection
-                ruvllm_integration::kernels::ane_ops::matmul_ane(
+                ruvllm::kernels::ane_ops::matmul_ane(
                     black_box(&input),
                     black_box(&w_up),
                     black_box(&mut intermediate),
                     batch_size, hidden_dim, intermediate_dim,
                 );
                 // SiLU activation
-                ruvllm_integration::kernels::ane_ops::silu_ane(
+                ruvllm::kernels::ane_ops::silu_ane(
                     black_box(&mut intermediate),
                     batch_size,
                     intermediate_dim,
                 );
                 // Down projection
-                ruvllm_integration::kernels::ane_ops::matmul_ane(
+                ruvllm::kernels::ane_ops::matmul_ane(
                     black_box(&intermediate),
                     black_box(&w_down),
                     black_box(&mut output),
@@ -830,7 +830,7 @@ fn bench_crossover_detection(c: &mut Criterion) {
             let id = BenchmarkId::new("ane", &id_suffix);
             group.bench_function(id, |bencher| {
                 bencher.iter(|| {
-                    ruvllm_integration::kernels::ane_ops::matmul_ane(
+                    ruvllm::kernels::ane_ops::matmul_ane(
                         black_box(&a),
                         black_box(&b),
                         black_box(&mut c_out),
@@ -846,7 +846,7 @@ fn bench_crossover_detection(c: &mut Criterion) {
             let id = BenchmarkId::new("accelerate", &id_suffix);
             group.bench_function(id, |bencher| {
                 bencher.iter(|| {
-                    ruvllm_integration::kernels::accelerate::gemm_accelerate(
+                    ruvllm::kernels::accelerate::gemm_accelerate(
                         black_box(&a),
                         black_box(&b),
                         black_box(&mut c_out),
@@ -937,7 +937,7 @@ fn bench_hybrid_pipeline(c: &mut Criterion) {
                     gemm_neon_local(&attn_output, &w_up, &mut intermediate, batch * seq_len, hidden_dim, intermediate_dim);
 
                     // MLP: SiLU activation (in-place)
-                    ruvllm_integration::kernels::activations::batch_silu(
+                    ruvllm::kernels::activations::batch_silu(
                         black_box(&mut intermediate),
                         intermediate_dim,
                     );
@@ -953,25 +953,25 @@ fn bench_hybrid_pipeline(c: &mut Criterion) {
         group.bench_function(id, |bencher| {
             bencher.iter(|| {
                 // Q, K, V projections
-                ruvllm_integration::kernels::ane_ops::matmul_ane(&hidden, &w_q, &mut q, batch * seq_len, hidden_dim, hidden_dim);
-                ruvllm_integration::kernels::ane_ops::matmul_ane(&hidden, &w_k, &mut k, batch * seq_len, hidden_dim, hidden_dim);
-                ruvllm_integration::kernels::ane_ops::matmul_ane(&hidden, &w_v, &mut v, batch * seq_len, hidden_dim, hidden_dim);
+                ruvllm::kernels::ane_ops::matmul_ane(&hidden, &w_q, &mut q, batch * seq_len, hidden_dim, hidden_dim);
+                ruvllm::kernels::ane_ops::matmul_ane(&hidden, &w_k, &mut k, batch * seq_len, hidden_dim, hidden_dim);
+                ruvllm::kernels::ane_ops::matmul_ane(&hidden, &w_v, &mut v, batch * seq_len, hidden_dim, hidden_dim);
 
                 // O projection
-                ruvllm_integration::kernels::ane_ops::matmul_ane(&v, &w_o, &mut attn_output, batch * seq_len, hidden_dim, hidden_dim);
+                ruvllm::kernels::ane_ops::matmul_ane(&v, &w_o, &mut attn_output, batch * seq_len, hidden_dim, hidden_dim);
 
                 // MLP: up projection
-                ruvllm_integration::kernels::ane_ops::matmul_ane(&attn_output, &w_up, &mut intermediate, batch * seq_len, hidden_dim, intermediate_dim);
+                ruvllm::kernels::ane_ops::matmul_ane(&attn_output, &w_up, &mut intermediate, batch * seq_len, hidden_dim, intermediate_dim);
 
                 // MLP: SiLU activation (ANE)
-                ruvllm_integration::kernels::ane_ops::silu_ane(
+                ruvllm::kernels::ane_ops::silu_ane(
                     black_box(&mut intermediate),
                     batch * seq_len,
                     intermediate_dim,
                 );
 
                 // MLP: down projection
-                ruvllm_integration::kernels::ane_ops::matmul_ane(&intermediate, &w_down, &mut mlp_output, batch * seq_len, intermediate_dim, hidden_dim);
+                ruvllm::kernels::ane_ops::matmul_ane(&intermediate, &w_down, &mut mlp_output, batch * seq_len, intermediate_dim, hidden_dim);
             })
         });
 
@@ -980,25 +980,25 @@ fn bench_hybrid_pipeline(c: &mut Criterion) {
         group.bench_function(id, |bencher| {
             bencher.iter(|| {
                 // Q, K, V projections (auto-dispatch based on size)
-                ruvllm_integration::kernels::ane_ops::matmul_auto(&hidden, &w_q, &mut q, batch * seq_len, hidden_dim, hidden_dim);
-                ruvllm_integration::kernels::ane_ops::matmul_auto(&hidden, &w_k, &mut k, batch * seq_len, hidden_dim, hidden_dim);
-                ruvllm_integration::kernels::ane_ops::matmul_auto(&hidden, &w_v, &mut v, batch * seq_len, hidden_dim, hidden_dim);
+                ruvllm::kernels::ane_ops::matmul_auto(&hidden, &w_q, &mut q, batch * seq_len, hidden_dim, hidden_dim);
+                ruvllm::kernels::ane_ops::matmul_auto(&hidden, &w_k, &mut k, batch * seq_len, hidden_dim, hidden_dim);
+                ruvllm::kernels::ane_ops::matmul_auto(&hidden, &w_v, &mut v, batch * seq_len, hidden_dim, hidden_dim);
 
                 // O projection (auto-dispatch)
-                ruvllm_integration::kernels::ane_ops::matmul_auto(&v, &w_o, &mut attn_output, batch * seq_len, hidden_dim, hidden_dim);
+                ruvllm::kernels::ane_ops::matmul_auto(&v, &w_o, &mut attn_output, batch * seq_len, hidden_dim, hidden_dim);
 
                 // MLP: up projection (auto-dispatch)
-                ruvllm_integration::kernels::ane_ops::matmul_auto(&attn_output, &w_up, &mut intermediate, batch * seq_len, hidden_dim, intermediate_dim);
+                ruvllm::kernels::ane_ops::matmul_auto(&attn_output, &w_up, &mut intermediate, batch * seq_len, hidden_dim, intermediate_dim);
 
                 // MLP: SiLU activation (auto-dispatch - typically ANE)
-                ruvllm_integration::kernels::ane_ops::silu_auto(
+                ruvllm::kernels::ane_ops::silu_auto(
                     black_box(&mut intermediate),
                     batch * seq_len,
                     intermediate_dim,
                 );
 
                 // MLP: down projection (auto-dispatch)
-                ruvllm_integration::kernels::ane_ops::matmul_auto(&intermediate, &w_down, &mut mlp_output, batch * seq_len, intermediate_dim, hidden_dim);
+                ruvllm::kernels::ane_ops::matmul_auto(&intermediate, &w_down, &mut mlp_output, batch * seq_len, intermediate_dim, hidden_dim);
             })
         });
     }
@@ -1042,7 +1042,7 @@ fn bench_activation_crossover(c: &mut Criterion) {
             group.bench_function(id, |bencher| {
                 bencher.iter(|| {
                     x.copy_from_slice(&x_orig);
-                    ruvllm_integration::kernels::activations::batch_silu(
+                    ruvllm::kernels::activations::batch_silu(
                         black_box(&mut x),
                         dim,
                     );
@@ -1058,7 +1058,7 @@ fn bench_activation_crossover(c: &mut Criterion) {
             group.bench_function(id, |bencher| {
                 bencher.iter(|| {
                     x.copy_from_slice(&x_orig);
-                    ruvllm_integration::kernels::ane_ops::silu_ane(
+                    ruvllm::kernels::ane_ops::silu_ane(
                         black_box(&mut x),
                         batch_size,
                         dim,
@@ -1075,7 +1075,7 @@ fn bench_activation_crossover(c: &mut Criterion) {
             group.bench_function(id, |bencher| {
                 bencher.iter(|| {
                     x.copy_from_slice(&x_orig);
-                    ruvllm_integration::kernels::ane_ops::silu_auto(
+                    ruvllm::kernels::ane_ops::silu_auto(
                         black_box(&mut x),
                         batch_size,
                         dim,

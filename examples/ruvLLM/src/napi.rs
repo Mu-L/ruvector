@@ -46,8 +46,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 // Import optimized kernels for capability detection
-use ruvllm_integration::kernels::is_neon_available;
-use ruvllm_integration::memory_pool::{MemoryManager, MemoryManagerConfig, MemoryManagerStats};
+use ruvllm_lib::kernels::is_neon_available;
+use ruvllm_lib::memory_pool::{MemoryManager, MemoryManagerConfig, MemoryManagerStats};
 
 /// RuvLLM Configuration for Node.js
 #[napi(object)]

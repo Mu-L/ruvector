@@ -6,9 +6,9 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
 
 #[cfg(all(target_os = "macos", feature = "metal-compute"))]
-use ruvllm_integration::metal::{MetalContext, MetalConfig};
+use ruvllm::metal::{MetalContext, MetalConfig};
 #[cfg(all(target_os = "macos", feature = "metal-compute"))]
-use ruvllm_integration::kernels::AttentionConfig;
+use ruvllm::kernels::AttentionConfig;
 
 #[cfg(all(target_os = "macos", feature = "metal-compute"))]
 fn bench_flash_attention_metal(c: &mut Criterion) {

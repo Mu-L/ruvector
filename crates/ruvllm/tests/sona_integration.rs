@@ -3,7 +3,7 @@
 //! Tests the three-tier learning loop: instant adaptation, background consolidation,
 //! and deep loop processing.
 
-use ruvllm_integration::{
+use ruvllm::{
     sona::{LearningLoop, SonaConfig, SonaIntegration, SonaStats, Trajectory, RoutingRecommendation},
     error::Result,
 };

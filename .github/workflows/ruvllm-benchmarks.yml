@@ -68,7 +68,7 @@ jobs:
 
       - name: Build ruvllm with ANE support
         run: |
-          cargo build --release -p ruvllm-integration --features "coreml,accelerate"
+          cargo build --release -p ruvllm --features "coreml,accelerate"
 
       - name: Run ANE vs NEON benchmarks
         if: github.event.inputs.run_ane_benchmarks != 'false'

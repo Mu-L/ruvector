@@ -18,8 +18,8 @@ ruvector-gnn = { path = "../../crates/ruvector-gnn", default-features = false }
 ruvector-attention = { path = "../../crates/ruvector-attention" }
 ruvector-graph = { path = "../../crates/ruvector-graph" }
 
-# Optimized inference backend (ruvllm-integration crate)
-ruvllm-integration = { path = "../../crates/ruvllm", default-features = false, features = ["async-runtime"] }
+# Optimized inference backend (ruvllm crate)
+ruvllm-lib = { package = "ruvllm", path = "../../crates/ruvllm", default-features = false, features = ["async-runtime"] }
 
 # Async runtime
 tokio = { version = "1.41", features = ["rt-multi-thread", "sync", "macros", "time", "fs"] }
@@ -103,11 +103,11 @@ hf-export = ["ruvector-sona"]
 # N-API bindings for Node.js
 napi = ["dep:napi", "dep:napi-derive"]
 # Multi-threaded GEMM/GEMV with rayon (4-6x speedup)
-parallel = ["ruvllm-integration/parallel"]
+parallel = ["ruvllm-lib/parallel"]
 # Candle backend for LLM inference (Rust-native, Metal acceleration on Mac)
-candle = ["ruvllm-integration/candle"]
+candle = ["ruvllm-lib/candle"]
 # Metal GPU acceleration for Apple Silicon (M1/M2/M3/M4)
-metal = ["ruvllm-integration/metal"]
+metal = ["ruvllm-lib/metal"]
 # Full inference with Metal
 inference-metal = ["candle", "metal", "parallel"]
 full = ["storage", "metrics", "server", "real-inference", "hf-export", "parallel"]

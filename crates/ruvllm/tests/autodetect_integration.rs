@@ -4,11 +4,11 @@
 //! and intelligent hardware-aware settings for LLM inference using the
 //! actual autodetect module.
 
-use ruvllm_integration::autodetect::{
+use ruvllm::autodetect::{
     Architecture, ComputeBackend, CoreInfo, CpuFeatures, GpuBackend, GpuCapabilities,
     InferenceConfig, Platform, SystemCapabilities,
 };
-use ruvllm_integration::backends::Quantization;
+use ruvllm::backends::Quantization;
 use std::collections::HashSet;
 
 // ============================================================================

@@ -23,12 +23,12 @@
 //! cargo test --package ruvllm --features coreml,hybrid-ane ruvltra_e2e
 //! ```
 
-use ruvllm_integration::backends::{
+use ruvllm::backends::{
     AneCapabilities, ComputeUnits, GenerateParams, LlmBackend,
     ModelArchitecture, ModelConfig, Quantization,
 };
-use ruvllm_integration::error::{Result, RuvLLMError};
-use ruvllm_integration::gguf::quantization::GgufQuantType;
+use ruvllm::error::{Result, RuvLLMError};
+use ruvllm::gguf::quantization::GgufQuantType;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};

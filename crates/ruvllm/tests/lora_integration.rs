@@ -3,7 +3,7 @@
 //! Tests MicroLoRA adaptation, forward pass, gradient accumulation,
 //! EWC state management, and serialization.
 
-use ruvllm_integration::{
+use ruvllm::{
     lora::{AdaptFeedback, LoraAdapter, MicroLoRA, MicroLoraConfig, TargetModule},
     error::Result,
 };

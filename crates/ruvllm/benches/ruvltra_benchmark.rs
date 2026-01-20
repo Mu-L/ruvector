@@ -40,19 +40,19 @@
 //!
 //! ```bash
 //! # Full benchmark suite
-//! cargo bench -p ruvllm-integration --bench ruvltra_benchmark
+//! cargo bench -p ruvllm --bench ruvltra_benchmark
 //!
 //! # Specific scenario
-//! cargo bench -p ruvllm-integration --bench ruvltra_benchmark -- short_prompt
+//! cargo bench -p ruvllm --bench ruvltra_benchmark -- short_prompt
 //!
 //! # With Metal GPU
-//! cargo bench -p ruvllm-integration --features metal-compute --bench ruvltra_benchmark
+//! cargo bench -p ruvllm --features metal-compute --bench ruvltra_benchmark
 //!
 //! # With ANE
-//! cargo bench -p ruvllm-integration --features coreml --bench ruvltra_benchmark
+//! cargo bench -p ruvllm --features coreml --bench ruvltra_benchmark
 //!
 //! # With parallel execution
-//! cargo bench -p ruvllm-integration --features parallel --bench ruvltra_benchmark
+//! cargo bench -p ruvllm --features parallel --bench ruvltra_benchmark
 //! ```
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
@@ -1066,7 +1066,7 @@ fn bench_backend_comparison(c: &mut Criterion) {
     {
         group.bench_function("ane_gemv_simulated", |b| {
             b.iter(|| {
-                // In practice, this would use ruvllm_integration::kernels::ane_ops
+                // In practice, this would use ruvllm::kernels::ane_ops
                 let result = gemv(black_box(&matrix_a), black_box(&vector_x), hidden, hidden);
                 // ANE would have ~30% less overhead in practice
                 black_box(result)

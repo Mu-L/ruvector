@@ -6,12 +6,12 @@
 //!
 //! Single-threaded baseline:
 //! ```bash
-//! cargo bench -p ruvllm-integration --features candle --bench matmul_bench -- gemm/512
+//! cargo bench -p ruvllm --features candle --bench matmul_bench -- gemm/512
 //! ```
 //!
 //! Parallel (with rayon):
 //! ```bash
-//! cargo bench -p ruvllm-integration --features candle,parallel --bench matmul_bench -- gemm/512
+//! cargo bench -p ruvllm --features candle,parallel --bench matmul_bench -- gemm/512
 //! ```
 //!
 //! ## Performance Targets for M4 Pro

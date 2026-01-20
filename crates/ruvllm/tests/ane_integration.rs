@@ -18,13 +18,13 @@
 
 // Import from the crate being tested
 // Note: CoreMLBackend methods require the coreml feature
-use ruvllm_integration::backends::{
+use ruvllm::backends::{
     AneCapabilities, ComputeUnits, GenerateParams, LlmBackend,
     ModelArchitecture, ModelConfig, Quantization,
 };
 #[cfg(feature = "coreml")]
-use ruvllm_integration::backends::CoreMLBackend;
-use ruvllm_integration::error::{Result, RuvLLMError};
+use ruvllm::backends::CoreMLBackend;
+use ruvllm::error::{Result, RuvLLMError};
 
 // ============================================================================
 // Platform Detection Helpers

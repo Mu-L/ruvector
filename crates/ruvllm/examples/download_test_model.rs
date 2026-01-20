@@ -6,16 +6,16 @@
 //!
 //! ```bash
 //! # Download TinyLlama (recommended for quick tests)
-//! cargo run -p ruvllm-integration --example download_test_model -- --model tinyllama
+//! cargo run -p ruvllm --example download_test_model -- --model tinyllama
 //!
 //! # Download Qwen2-0.5B (smallest, fastest)
-//! cargo run -p ruvllm-integration --example download_test_model -- --model qwen-0.5b
+//! cargo run -p ruvllm --example download_test_model -- --model qwen-0.5b
 //!
 //! # Download to custom directory
-//! cargo run -p ruvllm-integration --example download_test_model -- --model tinyllama --output ./my_models
+//! cargo run -p ruvllm --example download_test_model -- --model tinyllama --output ./my_models
 //!
 //! # List available models
-//! cargo run -p ruvllm-integration --example download_test_model -- --list
+//! cargo run -p ruvllm --example download_test_model -- --list
 //! ```
 //!
 //! ## Available Models
@@ -214,7 +214,7 @@ fn main() {
             println!("Model saved to: {}", output_path.display());
             println!();
             println!("To run tests with this model:");
-            println!("  TEST_MODEL_PATH={} cargo test -p ruvllm-integration --test real_model_test -- --ignored",
+            println!("  TEST_MODEL_PATH={} cargo test -p ruvllm --test real_model_test -- --ignored",
                      output_path.display());
         }
         Err(e) => {
@@ -230,7 +230,7 @@ fn print_help() {
     println!("RuvLLM Test Model Downloader");
     println!();
     println!("USAGE:");
-    println!("    cargo run -p ruvllm-integration --example download_test_model -- [OPTIONS] <MODEL>");
+    println!("    cargo run -p ruvllm --example download_test_model -- [OPTIONS] <MODEL>");
     println!();
     println!("ARGUMENTS:");
     println!("    <MODEL>    Model to download (use --list to see options)");
@@ -248,10 +248,10 @@ fn print_help() {
     println!();
     println!("EXAMPLES:");
     println!("    # Download TinyLlama (recommended for quick tests)");
-    println!("    cargo run -p ruvllm-integration --example download_test_model -- tinyllama");
+    println!("    cargo run -p ruvllm --example download_test_model -- tinyllama");
     println!();
     println!("    # Download to custom directory");
-    println!("    cargo run -p ruvllm-integration --example download_test_model -- -m qwen-0.5b -o ./models");
+    println!("    cargo run -p ruvllm --example download_test_model -- -m qwen-0.5b -o ./models");
 }
 
 fn list_models() {

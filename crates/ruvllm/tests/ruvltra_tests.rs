@@ -23,15 +23,15 @@
 //! cargo test --package ruvllm --all-features ruvltra_tests
 //! ```
 
-use ruvllm_integration::backends::{
+use ruvllm::backends::{
     AneCapabilities, ComputeUnits, GenerateParams, LlmBackend,
     ModelArchitecture, ModelConfig, Quantization,
 };
-use ruvllm_integration::error::{Result, RuvLLMError};
-use ruvllm_integration::gguf::quantization::{
+use ruvllm::error::{Result, RuvLLMError};
+use ruvllm::gguf::quantization::{
     dequantize_tensor, GgufQuantType, QuantizedTensor,
 };
-use ruvllm_integration::kernels::ane_ops::{
+use ruvllm::kernels::ane_ops::{
     get_ane_recommendation, is_ane_available, should_use_ane,
     should_use_ane_activation, should_use_ane_matmul, AneRecommendation,
 };

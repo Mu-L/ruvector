@@ -12,7 +12,7 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 use rand::Rng;
 
 // Re-create the kernel functions inline since we can't import from the crate easily in benches
-// In production, these would be imported from ruvllm_integration::kernels
+// In production, these would be imported from ruvllm::kernels
 
 /// SIMD lane width for NEON (128-bit = 4 floats)
 const NEON_LANE_WIDTH: usize = 4;

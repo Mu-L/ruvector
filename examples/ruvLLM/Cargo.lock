@@ -3574,9 +3574,11 @@ dependencies = [
  "ruvector-sona",
  "serde",
  "serde_json",
+ "smallvec",
  "thiserror 2.0.18",
  "tokenizers",
  "tokio",
+ "tokio-stream",
  "tracing",
  "uuid",
 ]

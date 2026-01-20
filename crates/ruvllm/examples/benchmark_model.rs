@@ -10,17 +10,17 @@
 //!
 //! ```bash
 //! # Benchmark a specific model
-//! cargo run -p ruvllm-integration --example benchmark_model --release -- --model ./test_models/tinyllama.gguf
+//! cargo run -p ruvllm --example benchmark_model --release -- --model ./test_models/tinyllama.gguf
 //!
 //! # With custom parameters
-//! cargo run -p ruvllm-integration --example benchmark_model --release -- \
+//! cargo run -p ruvllm --example benchmark_model --release -- \
 //!     --model ./model.gguf \
 //!     --warmup 5 \
 //!     --iterations 20 \
 //!     --max-tokens 100
 //!
 //! # JSON output for CI/automation
-//! cargo run -p ruvllm-integration --example benchmark_model --release -- \
+//! cargo run -p ruvllm --example benchmark_model --release -- \
 //!     --model ./model.gguf --json
 //! ```
 //!
@@ -283,7 +283,7 @@ fn main() {
         eprintln!("Error: Model file not found: {}", config.model_path.display());
         eprintln!();
         eprintln!("Download a test model with:");
-        eprintln!("  cargo run -p ruvllm-integration --example download_test_model -- --model tinyllama");
+        eprintln!("  cargo run -p ruvllm --example download_test_model -- --model tinyllama");
         std::process::exit(1);
     }
 
@@ -381,7 +381,7 @@ fn print_help() {
     println!("RuvLLM Model Benchmark");
     println!();
     println!("USAGE:");
-    println!("    cargo run -p ruvllm-integration --example benchmark_model --release -- [OPTIONS] <MODEL>");
+    println!("    cargo run -p ruvllm --example benchmark_model --release -- [OPTIONS] <MODEL>");
     println!();
     println!("ARGUMENTS:");
     println!("    <MODEL>    Path to GGUF model file");
@@ -398,14 +398,14 @@ fn print_help() {
     println!();
     println!("EXAMPLES:");
     println!("    # Basic benchmark");
-    println!("    cargo run -p ruvllm-integration --example benchmark_model --release -- ./model.gguf");
+    println!("    cargo run -p ruvllm --example benchmark_model --release -- ./model.gguf");
     println!();
     println!("    # Custom configuration");
-    println!("    cargo run -p ruvllm-integration --example benchmark_model --release -- \\");
+    println!("    cargo run -p ruvllm --example benchmark_model --release -- \\");
     println!("        --model ./model.gguf --warmup 10 --iterations 50 --max-tokens 100");
     println!();
     println!("    # JSON output for automation");
-    println!("    cargo run -p ruvllm-integration --example benchmark_model --release -- \\");
+    println!("    cargo run -p ruvllm --example benchmark_model --release -- \\");
     println!("        --model ./model.gguf --json > results.json");
 }
 
@@ -431,7 +431,7 @@ fn run_benchmark(config: &BenchmarkConfig, model_size: u64) -> BenchmarkResults 
 
 #[cfg(feature = "candle")]
 fn run_real_benchmark(config: &BenchmarkConfig, model_size: u64) -> Result<BenchmarkResults, String> {
-    use ruvllm_integration::{CandleBackend, LlmBackend, GenerateParams, ModelConfig};
+    use ruvllm::{CandleBackend, LlmBackend, GenerateParams, ModelConfig};
     use std::time::Instant;
 
     if !config.json_output {

@@ -3,7 +3,7 @@
 //! Tests the LLM backend infrastructure including model loading,
 //! text generation, streaming, and embeddings extraction.
 
-use ruvllm_integration::{
+use ruvllm::{
     backends::{
         create_backend, DeviceType, DType, GenerateParams, LlmBackend, ModelArchitecture,
         ModelConfig, ModelInfo, Quantization, SpecialTokens, TokenStream, Tokenizer,
@@ -47,7 +47,7 @@ impl LlmBackend for MockBackend {
 
     fn generate(&self, prompt: &str, _params: GenerateParams) -> Result<String> {
         if !self.loaded {
-            return Err(ruvllm_integration::RuvLLMError::Backend(
+            return Err(ruvllm::RuvLLMError::Backend(
                 "Model not loaded".to_string(),
             ));
         }
@@ -58,27 +58,27 @@ impl LlmBackend for MockBackend {
         &self,
         _prompt: &str,
         _params: GenerateParams,
-    ) -> Result<Box<dyn Iterator<Item = Result<ruvllm_integration::backends::GeneratedToken>> + Send + '_>> {
+    ) -> Result<Box<dyn Iterator<Item = Result<ruvllm::backends::GeneratedToken>> + Send + '_>> {
         if !self.loaded {
-            return Err(ruvllm_integration::RuvLLMError::Backend(
+            return Err(ruvllm::RuvLLMError::Backend(
                 "Model not loaded".to_string(),
             ));
         }
 
         let tokens = vec![
-            ruvllm_integration::backends::GeneratedToken {
+            ruvllm::backends::GeneratedToken {
                 id: 1,
                 text: "Hello".to_string(),
                 logprob: Some(-0.5),
                 is_special: false,
             },
-            ruvllm_integration::backends::GeneratedToken {
+            ruvllm::backends::GeneratedToken {
                 id: 2,
                 text: " world".to_string(),
                 logprob: Some(-0.3),
                 is_special: false,
             },
-            ruvllm_integration::backends::GeneratedToken {
+            ruvllm::backends::GeneratedToken {
                 id: 3,
                 text: "!".to_string(),
                 logprob: Some(-0.1),
@@ -91,7 +91,7 @@ impl LlmBackend for MockBackend {
 
     fn generate_stream_v2(&self, _prompt: &str, _params: GenerateParams) -> Result<TokenStream> {
         if !self.loaded {
-            return Err(ruvllm_integration::RuvLLMError::Backend(
+            return Err(ruvllm::RuvLLMError::Backend(
                 "Model not loaded".to_string(),
             ));
         }
@@ -104,7 +104,7 @@ impl LlmBackend for MockBackend {
 
     fn get_embeddings(&self, _text: &str) -> Result<Vec<f32>> {
         if !self.loaded {
-            return Err(ruvllm_integration::RuvLLMError::Backend(
+            return Err(ruvllm::RuvLLMError::Backend(
                 "Model not loaded".to_string(),
             ));
         }
@@ -384,7 +384,7 @@ fn test_create_backend() {
 #[cfg(feature = "candle")]
 mod candle_tests {
     use super::*;
-    use ruvllm_integration::backends::CandleBackend;
+    use ruvllm::backends::CandleBackend;
 
     #[test]
     #[ignore] // Requires model download
@@ -412,7 +412,7 @@ mod candle_tests {
 // ========== V2 Feature Tests: Memory Pool Integration ==========
 
 mod memory_pool_tests {
-    use ruvllm_integration::memory_pool::{
+    use ruvllm::memory_pool::{
         InferenceArena, BufferPool, BufferSize, ScratchSpaceManager,
         MemoryManager, MemoryManagerConfig,
     };

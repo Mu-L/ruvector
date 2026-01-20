@@ -4,7 +4,7 @@
 //! session management, KV cache, paged attention, and policy/witness stores.
 
 use chrono::Utc;
-use ruvllm_integration::{
+use ruvllm::{
     RuvLLMConfig, RuvLLMEngine,
     backends::{DeviceType, DType, GenerateParams, ModelConfig, ModelArchitecture, Quantization},
     kv_cache::{TwoTierKvCache, KvCacheConfig},

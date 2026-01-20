@@ -53,7 +53,7 @@
 //!
 //! ## Optimized Kernels (v2.0)
 //!
-//! Version 2.0 integrates the `ruvllm-integration` crate for optimized inference:
+//! Version 2.0 integrates the `ruvllm` crate for optimized inference:
 //!
 //! - **Flash Attention 2**: Tiled computation with online softmax (3-6x speedup)
 //! - **NEON GEMM/GEMV**: M4 Pro optimized with 12x4 micro-kernels
@@ -100,10 +100,10 @@ pub mod inference_real;
 pub mod napi;
 
 // =============================================================================
-// Re-exports from ruvllm-integration for optimized kernels and backends
+// Re-exports from ruvllm for optimized kernels and backends
 // =============================================================================
 
-/// Optimized NEON/SIMD kernels from ruvllm-integration.
+/// Optimized NEON/SIMD kernels from ruvllm.
 ///
 /// Provides highly optimized kernels for LLM inference:
 /// - Flash Attention 2 with online softmax
@@ -112,36 +112,36 @@ pub mod napi;
 /// - RoPE (Rotary Position Embeddings)
 /// - INT8/INT4/Q4K quantized inference
 pub mod kernels {
-    pub use ruvllm_integration::kernels::*;
+    pub use ruvllm_lib::kernels::*;
 }
 
 /// LLM inference backends (Candle, mistral-rs).
 pub mod backends {
-    pub use ruvllm_integration::backends::*;
+    pub use ruvllm_lib::backends::*;
 }
 
 /// Two-tier KV cache with FP16 + quantized storage.
 pub mod kv_cache {
-    pub use ruvllm_integration::kv_cache::*;
+    pub use ruvllm_lib::kv_cache::*;
 }
 
 /// Memory pool and arena allocators for inference.
 pub mod memory_pool {
-    pub use ruvllm_integration::memory_pool::*;
+    pub use ruvllm_lib::memory_pool::*;
 }
 
 /// Speculative decoding for faster generation.
 pub mod speculative {
-    pub use ruvllm_integration::speculative::*;
+    pub use ruvllm_lib::speculative::*;
 }
 
 /// LoRA adapter management and composition.
 pub mod lora {
-    pub use ruvllm_integration::lora::*;
+    pub use ruvllm_lib::lora::*;
 }
 
-// Re-export key types from ruvllm-integration at crate root
-pub use ruvllm_integration::{
+// Re-export key types from ruvllm at crate root
+pub use ruvllm_lib::{
     RuvLLMConfig as IntegrationConfig,
     RuvLLMEngine as IntegrationEngine,
     PagedAttention, PagedAttentionConfig, PageTable, PageBlock,

@@ -3,7 +3,7 @@
 //! These tests verify the speculative decoding implementation works correctly
 //! with mock backends.
 
-use ruvllm_integration::speculative::{
+use ruvllm::speculative::{
     SpeculativeConfig, SpeculativeStats, AtomicSpeculativeStats,
     SpeculationTree, TreeNode, VerificationResult,
     softmax, log_softmax, top_k_filter, top_p_filter,

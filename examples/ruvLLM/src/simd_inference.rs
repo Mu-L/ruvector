@@ -5,7 +5,7 @@
 //!
 //! ## Optimized Kernels (v2.0)
 //!
-//! This module now integrates with `ruvllm_integration::kernels` for optimized operations:
+//! This module now integrates with `ruvllm_lib::kernels` for optimized operations:
 //! - **Flash Attention 2**: Use `flash_attention_neon` for 3-6x speedup
 //! - **GEMM/GEMV**: Use `gemm_neon`/`gemv_neon` for optimized matrix ops
 //! - **Parallel**: Enable `parallel` feature for multi-threaded inference
@@ -35,9 +35,9 @@ use std::sync::Arc;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
-// Import optimized kernels from ruvllm-integration when available on aarch64
+// Import optimized kernels from ruvllm when available on aarch64
 #[cfg(target_arch = "aarch64")]
-use ruvllm_integration::kernels::{
+use ruvllm_lib::kernels::{
     flash_attention_neon as optimized_attention,
     gemv_neon as optimized_gemv,
     rms_norm_neon as optimized_rms_norm,
@@ -45,7 +45,7 @@ use ruvllm_integration::kernels::{
 };
 
 #[cfg(all(target_arch = "aarch64", feature = "parallel"))]
-use ruvllm_integration::kernels::{
+use ruvllm_lib::kernels::{
     gemv_parallel as optimized_gemv_parallel,
     multi_query_attention_parallel,
 };
@@ -55,13 +55,13 @@ pub struct SimdOps;
 
 impl SimdOps {
     // =========================================================================
-    // Optimized operations using ruvllm-integration kernels (v2.0)
+    // Optimized operations using ruvllm kernels (v2.0)
     // =========================================================================
 
     /// Flash Attention 2 using optimized NEON kernels (aarch64) or fallback (x86_64)
     ///
     /// This method uses the highly optimized Flash Attention 2 implementation from
-    /// `ruvllm_integration::kernels` on Apple Silicon, with automatic fallback
+    /// `ruvllm_lib::kernels` on Apple Silicon, with automatic fallback
     /// to the local implementation on other architectures.
     ///
     /// # Performance
@@ -71,7 +71,7 @@ impl SimdOps {
     pub fn attention(query: &[f32], key: &[f32], value: &[f32], scale: f32, causal: bool) -> Vec<f32> {
         #[cfg(target_arch = "aarch64")]
         {
-            // Use optimized Flash Attention 2 from ruvllm-integration
+            // Use optimized Flash Attention 2 from ruvllm
             optimized_attention(query, key, value, scale, causal)
         }
 
@@ -84,7 +84,7 @@ impl SimdOps {
 
     /// GEMV using optimized NEON kernels with automatic parallel dispatch
     ///
-    /// Uses the 12-row micro-kernel from `ruvllm_integration` on aarch64.
+    /// Uses the 12-row micro-kernel from `ruvllm_lib` on aarch64.
     /// Automatically dispatches to parallel version when `parallel` feature is enabled.
     ///
     /// # Performance
@@ -134,7 +134,7 @@ impl SimdOps {
 
     /// RMSNorm using optimized NEON kernels
     ///
-    /// Uses vectorized sum-of-squares and normalization from `ruvllm_integration`.
+    /// Uses vectorized sum-of-squares and normalization from `ruvllm_lib`.
     #[inline]
     pub fn rms_norm_optimized(input: &[f32], weight: &[f32], eps: f32) -> Vec<f32> {
         #[cfg(target_arch = "aarch64")]

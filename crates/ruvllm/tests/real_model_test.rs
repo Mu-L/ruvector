@@ -5,10 +5,10 @@
 //!
 //! ```bash
 //! # Run with specific model path
-//! TEST_MODEL_PATH=./test_models/tinyllama.gguf cargo test -p ruvllm-integration --test real_model_test -- --ignored
+//! TEST_MODEL_PATH=./test_models/tinyllama.gguf cargo test -p ruvllm --test real_model_test -- --ignored
 //!
 //! # Run with default test_models directory
-//! cargo test -p ruvllm-integration --test real_model_test -- --ignored
+//! cargo test -p ruvllm --test real_model_test -- --ignored
 //! ```
 //!
 //! ## Recommended test models (small, fast)
@@ -22,7 +22,7 @@
 //! ## Download test models
 //!
 //! ```bash
-//! cargo run -p ruvllm-integration --example download_test_model -- --model tinyllama
+//! cargo run -p ruvllm --example download_test_model -- --model tinyllama
 //! ```
 
 use std::env;
@@ -209,7 +209,7 @@ pub fn skip_if_no_model(patterns: &[&str], model_name: &str) -> Option<PathBuf> 
             println!("SKIPPED: No {} model found.", model_name);
             println!("To run this test:");
             println!("  1. Download the model:");
-            println!("     cargo run -p ruvllm-integration --example download_test_model -- --model {}", model_name.to_lowercase().replace(' ', ""));
+            println!("     cargo run -p ruvllm --example download_test_model -- --model {}", model_name.to_lowercase().replace(' ', ""));
             println!("  2. Or set TEST_MODEL_PATH environment variable");
             println!("  3. Or place model in ./test_models/ directory");
             None

@@ -14,20 +14,20 @@
 //!
 //! ### Without a real model (uses NoopBackend simulation):
 //! ```bash
-//! cargo test -p ruvllm-integration --test e2e_integration_test
+//! cargo test -p ruvllm --test e2e_integration_test
 //! ```
 //!
 //! ### With a real model file:
 //! ```bash
-//! TEST_MODEL_PATH=/path/to/model.gguf cargo test -p ruvllm-integration --test e2e_integration_test -- --ignored
+//! TEST_MODEL_PATH=/path/to/model.gguf cargo test -p ruvllm --test e2e_integration_test -- --ignored
 //! ```
 //!
 //! ### Run specific test with model:
 //! ```bash
-//! TEST_MODEL_PATH=/path/to/model.gguf cargo test -p ruvllm-integration --test e2e_integration_test test_real_model_generation -- --ignored
+//! TEST_MODEL_PATH=/path/to/model.gguf cargo test -p ruvllm --test e2e_integration_test test_real_model_generation -- --ignored
 //! ```
 
-use ruvllm_integration::{
+use ruvllm::{
     // Backends
     backends::{
         GenerateParams, GeneratedToken, LlmBackend, ModelArchitecture, ModelConfig,
@@ -421,9 +421,9 @@ impl LlmBackend for MockLlmBackend {
         self.model_loaded.load(Ordering::SeqCst)
     }
 
-    fn model_info(&self) -> Option<ruvllm_integration::backends::ModelInfo> {
+    fn model_info(&self) -> Option<ruvllm::backends::ModelInfo> {
         if self.is_model_loaded() {
-            Some(ruvllm_integration::backends::ModelInfo {
+            Some(ruvllm::backends::ModelInfo {
                 name: "MockModel-7B".to_string(),
                 architecture: ModelArchitecture::Llama,
                 num_parameters: 7_000_000_000,
