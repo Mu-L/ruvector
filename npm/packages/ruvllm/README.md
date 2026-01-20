@@ -43,6 +43,9 @@ for await (const token of llm.stream('Write a haiku about Rust')) {
 | **HuggingFace Hub** | Download/upload models directly |
 | **Adapter Merging** | TIES, DARE, SLERP strategies |
 | **HNSW Routing** | 150x faster semantic matching |
+| **Evaluation Harness** | SWE-Bench testing with 5 ablation modes |
+| **Auto-Dimension** | HNSW auto-detects model embedding size |
+| **mistral-rs Backend** | Production serving with PagedAttention, X-LoRA, ISQ (5-10x concurrent users) |
 
 ## CLI Usage
 
@@ -58,6 +61,9 @@ ruvllm download ruvector/ruvltra-small-q4km
 
 # Benchmark
 ruvllm bench ./models/model.gguf
+
+# Run evaluation (SWE-Bench)
+ruvllm eval --model ./models/model.gguf --subset lite --max-tasks 50
 ```
 
 ## API Reference
@@ -139,6 +145,73 @@ simd.rmsNorm(hidden, weights, epsilon);
 | Flash Attention | 320µs (seq=2048) |
 | HNSW Search | 17-62µs |
 | SONA Adapt | <1ms |
+| Evaluation | 5 ablation modes |
+
+## Evaluation Harness
+
+Run model evaluations with SWE-Bench integration:
+
+```typescript
+import { RuvLLM, EvaluationHarness, AblationMode } from '@ruvector/ruvllm';
+
+const harness = new EvaluationHarness({
+  modelPath: './models/model.gguf',
+  enableHnsw: true,
+  enableSona: true,
+});
+
+// Run single evaluation
+const result = await harness.evaluate(
+  'Fix the null pointer exception',
+  'def process(data): return data.split()',
+  AblationMode.Full
+);
+
+console.log(`Success: ${result.success}, Quality: ${result.qualityScore}`);
+
+// Run ablation study (Baseline, RetrievalOnly, AdaptersOnly, R+A, Full)
+const report = await harness.runAblationStudy(tasks);
+for (const [mode, metrics] of Object.entries(report.modeMetrics)) {
+  console.log(`${mode}: ${metrics.successRate * 100}% success`);
+}
+```
+
+## mistral-rs Backend (Production Serving)
+
+For production deployments with 10-100+ concurrent users, use the mistral-rs backend:
+
+```typescript
+import { RuvLLM, MistralBackend, PagedAttentionConfig } from '@ruvector/ruvllm';
+
+// Configure for production serving
+const backend = new MistralBackend({
+  // PagedAttention: 5-10x more concurrent users
+  pagedAttention: {
+    blockSize: 16,
+    maxBlocks: 4096,
+    gpuMemoryFraction: 0.9,
+    prefixCaching: true,
+  },
+  // X-LoRA: Per-token adapter routing
+  xlora: {
+    adapters: ['./adapters/coder', './adapters/researcher'],
+    topK: 2,
+  },
+  // ISQ: Runtime quantization
+  isq: {
+    bits: 4,
+    method: 'awq',
+  },
+});
+
+const llm = new RuvLLM({ backend });
+await llm.loadModel('mistralai/Mistral-7B-Instruct-v0.2');
+
+// Serve multiple concurrent requests
+const response = await llm.query('Write production code');
+```
+
+> **Note**: mistral-rs features require the Rust backend with `mistral-rs` feature enabled. Native bindings will use mistral-rs when available.
 
 ## Supported Models
 

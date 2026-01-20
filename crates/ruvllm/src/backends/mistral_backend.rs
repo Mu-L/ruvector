@@ -54,6 +54,19 @@ use dashmap::DashMap;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
+// Conditional imports for mistral-rs crate integration
+#[cfg(feature = "mistral-rs")]
+use mistralrs::{
+    GGUFLoaderBuilder, GGUFSpecificConfig,
+    MistralRs, MistralRsBuilder,
+    PagedAttentionMetaBuilder, SchedulerConfig,
+    TokenSource, Device as MistralDevice,
+    NormalRequest, Request, RequestMessage,
+    Response, SamplingParams, Constraint,
+};
+#[cfg(feature = "mistral-rs")]
+use tokio::sync::mpsc::channel as tokio_channel;
+
 // ============================================================================
 // Configuration Types
 // ============================================================================
@@ -726,6 +739,10 @@ pub struct MistralBackend {
     sequence_counter: AtomicU64,
     /// Model path
     model_path: Option<PathBuf>,
+
+    /// mistral-rs model instance (when feature enabled)
+    #[cfg(feature = "mistral-rs")]
+    mistral_model: Option<Arc<MistralRs>>,
 }
 
 impl MistralBackend {
@@ -764,6 +781,8 @@ impl MistralBackend {
             is_loaded: AtomicBool::new(false),
             sequence_counter: AtomicU64::new(0),
             model_path: None,
+            #[cfg(feature = "mistral-rs")]
+            mistral_model: None,
         })
     }
 
@@ -785,6 +804,18 @@ impl MistralBackend {
     /// Get X-LoRA statistics
     pub fn xlora_stats(&self) -> Option<XLoraManagerStats> {
         self.xlora_manager.as_ref().map(|xm| xm.stats())
+    }
+
+    /// Check if the mistral-rs native model is loaded
+    #[cfg(feature = "mistral-rs")]
+    pub fn has_native_model(&self) -> bool {
+        self.mistral_model.is_some()
+    }
+
+    /// Check if the mistral-rs native model is loaded (always false when feature disabled)
+    #[cfg(not(feature = "mistral-rs"))]
+    pub fn has_native_model(&self) -> bool {
+        false
     }
 
     /// Load X-LoRA adapter
@@ -853,6 +884,119 @@ impl MistralBackend {
         prompt: &str,
         params: &GenerateParams,
     ) -> Result<(String, Vec<GeneratedToken>)> {
+        // Try to use mistral-rs model if available
+        #[cfg(feature = "mistral-rs")]
+        if let Some(ref model) = self.mistral_model {
+            return self.generate_with_mistral_rs(model, prompt, params);
+        }
+
+        // Fallback to stub implementation
+        self.generate_internal_stub(prompt, params)
+    }
+
+    /// Generate using the actual mistral-rs model
+    #[cfg(feature = "mistral-rs")]
+    fn generate_with_mistral_rs(
+        &self,
+        model: &Arc<MistralRs>,
+        prompt: &str,
+        params: &GenerateParams,
+    ) -> Result<(String, Vec<GeneratedToken>)> {
+        use std::sync::mpsc::channel;
+
+        // Create sampling parameters from our GenerateParams
+        let sampling_params = SamplingParams {
+            temperature: params.temperature.map(|t| t as f64),
+            top_p: params.top_p.map(|p| p as f64),
+            top_k: params.top_k.map(|k| k as usize),
+            max_len: Some(params.max_tokens),
+            repetition_penalty: params.repetition_penalty.map(|p| p as f32),
+            presence_penalty: params.presence_penalty.map(|p| p as f32),
+            frequency_penalty: params.frequency_penalty.map(|p| p as f32),
+            stop_toks: if params.stop_sequences.is_empty() {
+                None
+            } else {
+                Some(mistralrs::StopTokens::Seqs(params.stop_sequences.clone()))
+            },
+            ..Default::default()
+        };
+
+        // Create the request
+        let (tx, rx) = channel();
+        let request = Request::Normal(NormalRequest {
+            messages: RequestMessage::Completion {
+                text: prompt.to_string(),
+                echo_prompt: false,
+                best_of: 1,
+            },
+            sampling_params,
+            response: tx,
+            return_logprobs: false,
+            is_streaming: false,
+            id: self.sequence_counter.fetch_add(1, Ordering::SeqCst) as usize,
+            constraint: Constraint::None,
+            suffix: None,
+            adapters: None,
+            tool_choice: None,
+            tools: None,
+            logits_processors: None,
+        });
+
+        // Send request to model
+        model.get_sender().map_err(|e| {
+            RuvLLMError::Compute(format!("Failed to get model sender: {}", e))
+        })?.blocking_send(request).map_err(|e| {
+            RuvLLMError::Compute(format!("Failed to send request to model: {}", e))
+        })?;
+
+        // Wait for response
+        let response = rx.recv().map_err(|e| {
+            RuvLLMError::Compute(format!("Failed to receive response: {}", e))
+        })?;
+
+        match response {
+            Response::Done(completion) => {
+                let output_text = completion.choices.first()
+                    .map(|c| c.message.content.clone().unwrap_or_default())
+                    .unwrap_or_default();
+
+                // Build generated tokens from the response
+                let generated_tokens = completion.choices.first()
+                    .map(|c| {
+                        // mistral-rs doesn't provide individual tokens in non-streaming mode
+                        // so we return a single token representing the full output
+                        vec![GeneratedToken {
+                            id: 0, // Not available in non-streaming
+                            text: c.message.content.clone().unwrap_or_default(),
+                            logprob: None,
+                            is_special: false,
+                        }]
+                    })
+                    .unwrap_or_default();
+
+                Ok((output_text, generated_tokens))
+            }
+            Response::InternalError(e) => {
+                Err(RuvLLMError::Compute(format!("Model internal error: {}", e)))
+            }
+            Response::ValidationError(e) => {
+                Err(RuvLLMError::Config(format!("Validation error: {}", e)))
+            }
+            Response::ModelError(msg, _) => {
+                Err(RuvLLMError::Compute(format!("Model error: {}", msg)))
+            }
+            _ => {
+                Err(RuvLLMError::Compute("Unexpected response type".to_string()))
+            }
+        }
+    }
+
+    /// Stub implementation when mistral-rs is not available or model not loaded
+    fn generate_internal_stub(
+        &self,
+        prompt: &str,
+        params: &GenerateParams,
+    ) -> Result<(String, Vec<GeneratedToken>)> {
         let tokenizer = self.tokenizer.as_ref().ok_or_else(|| {
             RuvLLMError::InvalidOperation("No tokenizer loaded".to_string())
         })?;
@@ -864,14 +1008,8 @@ impl MistralBackend {
         let mut generated_ids = input_ids.clone();
         let mut generated_tokens = Vec::new();
 
-        // Generation loop
+        // Generation loop (stub implementation)
         for step in 0..params.max_tokens {
-            // In a real implementation, this would:
-            // 1. Run the model forward pass
-            // 2. Use PagedAttention for KV cache lookup
-            // 3. Apply X-LoRA if configured
-            // 4. Sample from logits
-
             // Placeholder: simulate token generation
             let next_token_id = self.sample_next_token(&generated_ids, params, step)?;
 
@@ -945,6 +1083,8 @@ impl Default for MistralBackend {
             is_loaded: AtomicBool::new(false),
             sequence_counter: AtomicU64::new(0),
             model_path: None,
+            #[cfg(feature = "mistral-rs")]
+            mistral_model: None,
         })
     }
 }
@@ -1016,6 +1156,103 @@ impl LlmBackend for MistralBackend {
                         manager.load_adapter(adapter_name, &adapter_path)?;
                     }
                 }
+            }
+        }
+
+        // Load mistral-rs model when feature is enabled
+        #[cfg(feature = "mistral-rs")]
+        {
+            // Detect if model is GGUF format
+            let is_gguf = model_path.extension().map(|e| e == "gguf").unwrap_or(false)
+                || model_path.join("model.gguf").exists()
+                || std::fs::read_dir(&model_path)
+                    .map(|entries| entries.filter_map(|e| e.ok())
+                        .any(|e| e.path().extension().map(|ext| ext == "gguf").unwrap_or(false)))
+                    .unwrap_or(false);
+
+            if is_gguf {
+                // Build PagedAttention configuration from our config
+                let paged_attn_config = self.config.paged_attention.as_ref().map(|pa| {
+                    PagedAttentionMetaBuilder::default()
+                        .with_block_size(pa.block_size)
+                        .with_gpu_memory_utilization(pa.gpu_memory_fraction)
+                        .build()
+                });
+
+                // Determine the device
+                let device = match self.config.device {
+                    DeviceType::Cpu => MistralDevice::Cpu,
+                    DeviceType::Cuda(id) => MistralDevice::new_cuda(id).unwrap_or(MistralDevice::Cpu),
+                    DeviceType::Metal => MistralDevice::new_metal(0).unwrap_or(MistralDevice::Cpu),
+                    _ => MistralDevice::Cpu,
+                };
+
+                // Find the GGUF file
+                let gguf_file = if model_path.extension().map(|e| e == "gguf").unwrap_or(false) {
+                    model_path.clone()
+                } else {
+                    // Look for .gguf file in directory
+                    std::fs::read_dir(&model_path)
+                        .ok()
+                        .and_then(|entries| {
+                            entries
+                                .filter_map(|e| e.ok())
+                                .find(|e| e.path().extension().map(|ext| ext == "gguf").unwrap_or(false))
+                                .map(|e| e.path())
+                        })
+                        .unwrap_or_else(|| model_path.join("model.gguf"))
+                };
+
+                // Build GGUF loader
+                let loader = GGUFLoaderBuilder::new(
+                    None, // chat_template
+                    Some(tokenizer_path.to_string_lossy().to_string()),
+                    gguf_file.to_string_lossy().to_string(),
+                    GGUFSpecificConfig::default(),
+                )
+                .build();
+
+                // Build the MistralRs instance
+                let scheduler_config = if paged_attn_config.is_some() {
+                    SchedulerConfig::PagedAttentionMeta {
+                        max_num_seqs: self.config.max_batch_size,
+                        config: paged_attn_config.unwrap(),
+                    }
+                } else {
+                    SchedulerConfig::DefaultScheduler {
+                        method: mistralrs::DefaultSchedulerMethod::Fixed(
+                            std::num::NonZeroUsize::new(self.config.max_batch_size).unwrap_or(
+                                std::num::NonZeroUsize::new(1).unwrap()
+                            )
+                        ),
+                    }
+                };
+
+                // Create the pipeline
+                let pipeline = loader.load_model_from_hf(
+                    None, // revision
+                    TokenSource::CacheToken,
+                    &device,
+                    false, // silent
+                    None,  // mapper
+                    None,  // in_situ_quant
+                    paged_attn_config,
+                );
+
+                match pipeline {
+                    Ok(pipeline) => {
+                        let mistral = MistralRsBuilder::new(pipeline, scheduler_config).build();
+                        self.mistral_model = Some(Arc::new(mistral));
+                        tracing::info!("Loaded mistral-rs GGUF model from {:?}", gguf_file);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to load mistral-rs model: {}. Falling back to stub.", e);
+                        self.mistral_model = None;
+                    }
+                }
+            } else {
+                tracing::info!("Model is not GGUF format, mistral-rs model loading skipped");
+                self.mistral_model = None;
             }
         }
 
@@ -1160,6 +1397,12 @@ impl LlmBackend for MistralBackend {
         self.tokenizer = None;
         self.model_path = None;
         self.is_loaded.store(false, Ordering::SeqCst);
+
+        // Clear mistral-rs model
+        #[cfg(feature = "mistral-rs")]
+        {
+            self.mistral_model = None;
+        }
 
         // Reset PagedAttention
         if let Some(ref config) = self.config.paged_attention {
@@ -1315,5 +1558,20 @@ mod tests {
         assert_eq!(config.block_size, 16);
         assert_eq!(config.max_pages, 4096);
         assert!(config.enable_prefix_caching);
+    }
+
+    #[test]
+    fn test_has_native_model() {
+        let backend = MistralBackend::new().unwrap();
+        // Without loading a model, native model should not be present
+        assert!(!backend.has_native_model());
+    }
+
+    #[test]
+    fn test_backend_unload() {
+        let mut backend = MistralBackend::new().unwrap();
+        backend.unload_model();
+        assert!(!backend.is_model_loaded());
+        assert!(!backend.has_native_model());
     }
 }

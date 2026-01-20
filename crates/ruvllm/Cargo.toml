@@ -41,6 +41,9 @@ uuid = { workspace = true, features = ["v4", "serde"] }
 ndarray = { workspace = true }
 rand = { workspace = true }
 
+# Pattern matching
+regex = "1.10"
+
 # Parallelism (optional)
 rayon = { version = "1.10", optional = true }
 
@@ -67,8 +70,10 @@ tokenizers = { version = "0.20", optional = true, default-features = false, feat
 hf-hub = { version = "0.3", optional = true, features = ["tokio"] }
 
 # mistral-rs backend for high-performance inference (optional)
-# Note: mistralrs crate versions may vary - using placeholder version
-# Actual integration would use: mistralrs = { version = "0.4", optional = true }
+# NOTE: mistralrs crate is not yet on crates.io - use git dependency when available:
+# mistralrs = { git = "https://github.com/EricLBuehler/mistral.rs", optional = true }
+# Or when published to crates.io, uncomment:
+# mistralrs = { version = "0.4", optional = true, default-features = false }
 # mistralrs-core = { version = "0.4", optional = true }
 
 # Directories for cache
@@ -156,8 +161,8 @@ coreml = ["dep:objc2", "dep:objc2-foundation", "dep:objc2-core-ml", "dep:block2"
 hybrid-ane = ["metal-compute", "coreml"]
 
 # mistral-rs backend feature (enables full mistral-rs integration)
-# When the actual mistralrs crate is available, uncomment and use:
-# mistral-rs = ["mistralrs", "mistralrs-core", "tokenizers"]
+# NOTE: Uncomment when mistralrs crate is available
+# mistral-rs = ["dep:mistralrs", "dep:mistralrs-core", "tokenizers"]
 # mistral-rs-metal = ["mistral-rs", "mistralrs/metal"]
 # mistral-rs-cuda = ["mistral-rs", "mistralrs/cuda"]
 
@@ -222,3 +227,8 @@ path = "examples/hub_cli.rs"
 [[example]]
 name = "benchmark_model"
 path = "examples/benchmark_model.rs"
+
+[[example]]
+name = "run_eval"
+path = "examples/run_eval.rs"
+required-features = ["async-runtime"]

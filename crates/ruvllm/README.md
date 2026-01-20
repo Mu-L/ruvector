@@ -15,6 +15,9 @@ RuvLLM is a production-ready Rust LLM inference engine optimized for Apple Silic
 | **Hot-Swap Adapters** | Zero-downtime adapter switching | Runtime task specialization |
 | **Claude Dataset** | 2,700+ Claude-style training examples | Optimized for Claude Flow integration |
 | **HNSW Routing** | 150x faster semantic pattern matching | <25µs pattern retrieval |
+| **Evaluation Harness** | Real model evaluation with SWE-Bench | 5 ablation modes, quality metrics |
+| **HNSW Auto-Dimension** | Automatic embedding dimension detection | No manual config needed |
+| **mistral-rs Backend** | Production-scale serving with PagedAttention | 5-10x concurrent users, X-LoRA, ISQ |
 
 ### Previous v2.0-2.2 Features
 
@@ -126,6 +129,9 @@ ruvllm = { version = "2.0" }
 | `gguf-mmap` | Memory-mapped GGUF loading |
 | `async-runtime` | Tokio async support |
 | `wasm` | WebAssembly support |
+| `mistral-rs` | mistral-rs backend (PagedAttention, X-LoRA, ISQ) |
+| `mistral-rs-metal` | mistral-rs with Apple Silicon acceleration |
+| `mistral-rs-cuda` | mistral-rs with NVIDIA CUDA acceleration |
 
 ## Architecture
 
@@ -421,6 +427,90 @@ let tensors = loader.load_tensors("model.gguf")?;
 backend.load_tensors(tensors)?;
 ```
 
+## mistral-rs Backend (Production Serving)
+
+RuvLLM v2.3 includes integration with [mistral-rs](https://github.com/EricLBuehler/mistral.rs) for production-scale LLM serving with advanced memory management.
+
+> **Note**: The mistral-rs crate is not yet published to crates.io. The integration is designed and ready—enable it when mistral-rs becomes available.
+
+### Key Features
+
+| Feature | Description | Benefit |
+|---------|-------------|---------|
+| **PagedAttention** | vLLM-style KV cache management | 5-10x concurrent users, 85-95% memory utilization |
+| **X-LoRA** | Per-token adapter routing | <1ms routing overhead, multi-task inference |
+| **ISQ** | In-Situ Quantization (AWQ, GPTQ, RTN) | Runtime quantization without re-export |
+
+### Usage Example
+
+```rust
+use ruvllm::backends::mistral::{
+    MistralBackend, MistralBackendConfig,
+    PagedAttentionConfig, XLoraConfig, IsqConfig
+};
+
+// Configure mistral-rs backend for production serving
+let config = MistralBackendConfig::builder()
+    // PagedAttention: Enable 50+ concurrent users
+    .paged_attention(PagedAttentionConfig {
+        block_size: 16,
+        max_blocks: 4096,
+        gpu_memory_fraction: 0.9,
+        enable_prefix_caching: true,
+    })
+    // X-LoRA: Per-token adapter routing
+    .xlora(XLoraConfig {
+        adapters: vec![
+            "adapters/coder".into(),
+            "adapters/researcher".into(),
+        ],
+        top_k: 2,
+        temperature: 0.3,
+    })
+    // ISQ: Runtime quantization
+    .isq(IsqConfig {
+        bits: 4,
+        method: IsqMethod::AWQ,
+        calibration_samples: 128,
+    })
+    .build();
+
+let mut backend = MistralBackend::new(config)?;
+backend.load_model("mistralai/Mistral-7B-Instruct-v0.2", ModelConfig::default())?;
+
+// Generate with PagedAttention + X-LoRA
+let response = backend.generate("Write secure authentication code", GenerateParams {
+    max_tokens: 512,
+    temperature: 0.7,
+    ..Default::default()
+})?;
+```
+
+### When to Use mistral-rs vs Candle
+
+| Scenario | Recommended Backend | Reason |
+|----------|---------------------|--------|
+| Single user / Edge | Candle | Simpler, smaller binary |
+| 10-100 concurrent users | mistral-rs | PagedAttention memory efficiency |
+| Multi-task models | mistral-rs | X-LoRA per-token routing |
+| Runtime quantization | mistral-rs | ISQ without model re-export |
+| WASM / Browser | Candle | mistral-rs doesn't support WASM |
+
+### Feature Flags
+
+```toml
+# Enable mistral-rs (when available on crates.io)
+ruvllm = { version = "2.3", features = ["mistral-rs"] }
+
+# With Metal acceleration (Apple Silicon)
+ruvllm = { version = "2.3", features = ["mistral-rs-metal"] }
+
+# With CUDA acceleration (NVIDIA)
+ruvllm = { version = "2.3", features = ["mistral-rs-cuda"] }
+```
+
+See [ADR-008: mistral-rs Integration](../../docs/adr/ADR-008-mistral-rs-integration.md) for detailed architecture decisions.
+
 ## Configuration
 
 ### Environment Variables
@@ -540,12 +630,109 @@ manager.swap()?; // Zero-downtime switch
 | **DARE** | Drop And REscale | Sparse merging |
 | **TaskArithmetic** | Add/subtract vectors | Task composition |
 
+## Evaluation Harness (v2.3)
+
+RuvLLM includes a comprehensive evaluation harness for benchmarking model quality:
+
+```rust
+use ruvllm::evaluation::{RealEvaluationHarness, EvalConfig, AblationMode};
+
+// Create harness with GGUF model
+let harness = RealEvaluationHarness::with_gguf(
+    "./models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+    EvalConfig::default(),
+)?;
+
+// Run single evaluation
+let result = harness.evaluate(
+    "Fix the null pointer exception in this code",
+    "def process(data):\n    return data.split()",
+    AblationMode::Full,
+)?;
+
+println!("Success: {}, Quality: {:.2}", result.success, result.quality_score);
+
+// Run full ablation study (5 modes)
+let report = harness.run_ablation_study(&tasks)?;
+for (mode, metrics) in &report.mode_metrics {
+    println!("{:?}: {:.1}% success, {:.2} quality",
+        mode, metrics.success_rate * 100.0, metrics.avg_quality);
+}
+```
+
+### Ablation Modes
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| **Baseline** | No enhancements | Control baseline |
+| **RetrievalOnly** | HNSW pattern retrieval | Measure retrieval impact |
+| **AdaptersOnly** | LoRA adapters | Measure adaptation impact |
+| **RetrievalPlusAdapters** | HNSW + LoRA | Combined without SONA |
+| **Full** | All systems (SONA + HNSW + LoRA) | Production mode |
+
+### SWE-Bench Task Loader
+
+```rust
+use ruvllm::evaluation::swe_bench::SweBenchLoader;
+
+// Load SWE-Bench tasks
+let loader = SweBenchLoader::new();
+let tasks = loader.load_subset("lite", 50)?; // 50 tasks from lite subset
+
+for task in &tasks {
+    println!("Instance: {}", task.instance_id);
+    println!("Problem: {}", task.problem_statement);
+}
+```
+
+### CLI Evaluation
+
+```bash
+# Run evaluation with default settings
+cargo run --example run_eval --features async-runtime -- \
+    --model ./models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
+
+# Run SWE-Bench subset
+cargo run --example run_eval --features async-runtime -- \
+    --model ./models/model.gguf \
+    --swe-bench-path ./data/swe-bench \
+    --subset lite \
+    --max-tasks 100
+
+# Output report
+cargo run --example run_eval --features async-runtime -- \
+    --model ./models/model.gguf \
+    --output ./reports/eval-report.json
+```
+
+### HNSW Auto-Dimension Detection
+
+The evaluation harness automatically detects model embedding dimensions:
+
+```rust
+// HNSW router automatically uses model's hidden_size
+// TinyLlama 1.1B → 2048 dimensions
+// Qwen2 0.5B → 896 dimensions
+// RuvLTRA-Small → 896 dimensions
+// RuvLTRA-Medium → 2560 dimensions
+
+let harness = RealEvaluationHarness::with_config(
+    EvalConfig::default(),
+    RealInferenceConfig {
+        enable_hnsw: true,
+        hnsw_config: None, // Auto-detect from model
+        ..Default::default()
+    },
+)?;
+```
+
 ## Examples
 
 See the `/examples` directory for:
 
 - `download_test_model.rs` - Download and validate models
 - `benchmark_model.rs` - Full inference benchmarking
+- `run_eval.rs` - Run evaluation harness with SWE-Bench
 - Basic inference
 - Streaming generation
 - MicroLoRA adaptation

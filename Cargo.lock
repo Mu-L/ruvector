@@ -8221,6 +8221,7 @@ dependencies = [
  "parking_lot 0.12.5",
  "rand 0.8.5",
  "rayon",
+ "regex",
  "ruvector-attention",
  "ruvector-core 2.0.0",
  "ruvector-gnn",
