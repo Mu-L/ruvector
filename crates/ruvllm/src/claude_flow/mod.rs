@@ -184,6 +184,7 @@ mod agent_router;
 mod claude_integration;
 mod flow_optimizer;
 mod hnsw_router;
+mod hooks_integration;
 mod model_router;
 mod pretrain_pipeline;
 mod reasoning_bank;
@@ -208,6 +209,15 @@ pub use reasoning_bank::{
 pub use task_classifier::{ClassificationResult, TaskClassifier, TaskType};
 pub use task_generator::{
     seed_rng, GeneratedTask, TaskCategory, TaskComplexity, TaskGenerator,
+};
+
+// Hooks Integration exports (NEW v2.3)
+pub use hooks_integration::{
+    HooksIntegration, HooksConfig,
+    PreTaskInput, PreTaskResult, PostTaskInput, PostTaskResult,
+    PreEditInput, PreEditResult, PostEditInput, PostEditResult,
+    SessionState, SessionEndResult, SessionMetrics,
+    PatternMatch, QualityAssessment, LearningMetrics,
 };
 
 // Claude API Integration exports (NEW)

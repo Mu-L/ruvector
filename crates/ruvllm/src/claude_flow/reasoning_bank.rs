@@ -95,6 +95,19 @@ pub enum Verdict {
         /// Reason for partial completion
         reason: String,
     },
+    /// Task recovered via self-reflection
+    ///
+    /// This variant is used when a task initially failed but was successfully
+    /// recovered through the reflection system. It tracks the original error
+    /// and the recovery strategy that worked.
+    RecoveredViaReflection {
+        /// Original error that was encountered
+        original_error: String,
+        /// Recovery strategy that worked
+        recovery_strategy: String,
+        /// Number of attempts before successful recovery
+        attempts: u32,
+    },
 }
 
 impl Verdict {
@@ -105,6 +118,13 @@ impl Verdict {
             Verdict::Success { .. } => 1.0,
             Verdict::Failure { .. } => 0.0,
             Verdict::Partial { completion, .. } => *completion,
+            // Recovered tasks get a slightly lower score than pure success
+            // to reflect that they required extra effort
+            Verdict::RecoveredViaReflection { attempts, .. } => {
+                // More attempts = lower score, but still successful
+                // 1 attempt = 0.95, 2 = 0.90, 3 = 0.85, etc.
+                (1.0 - (*attempts as f32 - 1.0) * 0.05).clamp(0.7, 0.95)
+            }
         }
     }
 
@@ -121,6 +141,31 @@ impl Verdict {
             Verdict::Success { reason } => reason,
             Verdict::Failure { reason, .. } => reason,
             Verdict::Partial { reason, .. } => reason,
+            Verdict::RecoveredViaReflection { recovery_strategy, .. } => recovery_strategy,
+        }
+    }
+
+    /// Check if this verdict involved recovery via reflection
+    #[inline]
+    pub fn is_recovered(&self) -> bool {
+        matches!(self, Verdict::RecoveredViaReflection { .. })
+    }
+
+    /// Get the original error if this was a recovered verdict
+    #[inline]
+    pub fn original_error(&self) -> Option<&str> {
+        match self {
+            Verdict::RecoveredViaReflection { original_error, .. } => Some(original_error),
+            _ => None,
+        }
+    }
+
+    /// Get the number of recovery attempts if applicable
+    #[inline]
+    pub fn recovery_attempts(&self) -> Option<u32> {
+        match self {
+            Verdict::RecoveredViaReflection { attempts, .. } => Some(*attempts),
+            _ => None,
         }
     }
 }
@@ -560,6 +605,10 @@ impl ReasoningBankIntegration {
                 Verdict::Success { .. } => stats.successful_trajectories += 1,
                 Verdict::Failure { .. } => stats.failed_trajectories += 1,
                 Verdict::Partial { .. } => stats.partial_trajectories += 1,
+                Verdict::RecoveredViaReflection { .. } => {
+                    // Count recovered as successful since task completed
+                    stats.successful_trajectories += 1;
+                }
             }
             // Update running average quality
             let n = stats.total_trajectories as f32;

@@ -83,6 +83,9 @@ memmap2 = { version = "0.9", optional = true }
 # SHA256 hashing for model integrity verification
 sha2 = "0.10"
 
+# MD5 hashing for input hashing in semantic cache
+md5 = "0.7"
+
 # Metal GPU acceleration (macOS only)
 [target.'cfg(target_os = "macos")'.dependencies]
 metal = { version = "0.29", optional = true }

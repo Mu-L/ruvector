@@ -94,7 +94,7 @@ impl TaskCategory {
 }
 
 /// Complexity level for task classification
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ComplexityLevel {
     /// Simple, straightforward tasks
     Simple,
@@ -105,7 +105,7 @@ pub enum ComplexityLevel {
 }
 
 /// Domain type for task context
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DomainType {
     /// Web development (frontend/backend)
     Web,

@@ -46,6 +46,7 @@ pub mod autodetect;
 pub mod backends;
 pub mod capabilities;
 pub mod claude_flow;
+pub mod context;
 pub mod error;
 pub mod gguf;
 pub mod hub;
@@ -59,7 +60,10 @@ pub mod models;
 pub mod optimization;
 pub mod paged_attention;
 pub mod policy_store;
+pub mod quality;
 pub mod quantize;
+pub mod reasoning_bank;
+pub mod reflection;
 pub mod ruvector_integration;
 pub mod serving;
 pub mod session;
@@ -133,6 +137,12 @@ pub use claude_flow::{
     TaskComplexityAnalyzer, AnalyzerStats as ModelAnalyzerStats,
     SelectionCriteria, ModelRoutingDecision, ModelSelector, SelectorStats,
     ModelRouter,
+    // Hooks Integration (NEW v2.3) - Unified Claude Flow hooks interface
+    HooksIntegration, HooksConfig,
+    PreTaskInput, PreTaskResult, PostTaskInput, PostTaskResult,
+    PreEditInput, PreEditResult, PostEditInput, PostEditResult,
+    SessionState as HooksSessionState, SessionEndResult, SessionMetrics,
+    PatternMatch, QualityAssessment, LearningMetrics,
 };
 pub use optimization::{
     InferenceMetrics, MetricsCollector, MetricsSnapshot, MovingAverage, LatencyHistogram,
@@ -204,9 +214,21 @@ pub use quantize::{
     QuantProgress, QuantStats,
 };
 pub use training::{
+    // Claude task dataset
     ClaudeTaskDataset, ClaudeTaskExample, TaskCategory, TaskMetadata,
     ComplexityLevel, DomainType, DatasetConfig, AugmentationConfig,
     DatasetGenerator, DatasetStats,
+    // GRPO optimizer for reinforcement learning
+    GrpoConfig, GrpoOptimizer, GrpoSample, GrpoStats, GrpoUpdateResult,
+    GrpoBatch, SampleGroup,
+    // MCP tool training
+    McpToolTrainer, McpTrainingConfig, ToolTrajectory, TrajectoryStep,
+    TrajectoryBuilder, StepBuilder, TrajectoryMetadata,
+    TrainingResult, TrainingStats, TrainingCheckpoint, EvaluationMetrics,
+    // Tool calling dataset
+    ToolCallDataset, ToolCallExample, ToolDatasetConfig, ToolDatasetStats,
+    McpToolDef, ToolParam, ParamType, DifficultyLevel, DifficultyWeights,
+    McpToolCategory,
 };
 
 // RuvLTRA model architecture exports
@@ -232,6 +254,81 @@ pub use ruvector_integration::{
     UnifiedIndex, VectorMetadata, IndexStats, SearchResultWithMetadata,
     // Intelligence layer
     IntelligenceLayer, IntelligentRoutingDecision, IntelligenceLayerStats,
+};
+
+// Quality scoring exports
+pub use quality::{
+    // Core metrics
+    QualityMetrics, QualityWeights, QualityDimension, QualitySummary, TrendDirection,
+    // Scoring engine
+    QualityScoringEngine, ScoringConfig, ScoringContext, QualityHistory,
+    ComparisonResult, TrendAnalysis, ImprovementRecommendation,
+    // Coherence validation
+    CoherenceValidator, CoherenceConfig, SemanticConsistencyResult,
+    ContradictionResult, CoherenceViolation, LogicalFlowResult,
+    // Diversity analysis
+    DiversityAnalyzer, DiversityConfig, DiversityResult,
+    DiversificationSuggestion, ModeCollapseResult,
+    // Schema validators
+    SchemaValidator, JsonSchemaValidator, TypeValidator, RangeValidator,
+    FormatValidator, CombinedValidator, ValidationResult, ValidationError,
+    ValidationCombinator,
+};
+
+// Context management exports (intelligent pruning and semantic memory)
+pub use context::{
+    // Agentic memory
+    AgenticMemory, AgenticMemoryConfig, MemoryType,
+    // Working memory
+    WorkingMemory, WorkingMemoryConfig, TaskContext, ScratchpadEntry, AttentionWeights,
+    // Episodic memory
+    EpisodicMemory, EpisodicMemoryConfig, Episode, EpisodeMetadata,
+    EpisodeTrajectory, CompressedEpisode,
+    // Context manager
+    IntelligentContextManager, ContextManagerConfig, PreparedContext,
+    PriorityScorer, ContextElement, ElementPriority,
+    // Semantic cache
+    SemanticToolCache, SemanticCacheConfig, CachedToolResult, CacheStats,
+    // Claude Flow bridge
+    ClaudeFlowMemoryBridge, ClaudeFlowBridgeConfig, SyncResult,
+};
+
+// Self-Reflection architecture exports (error recovery and self-correction)
+pub use reflection::{
+    // Reflective agent wrapper
+    ReflectiveAgent, ReflectionStrategy, ReflectionConfig, RetryConfig,
+    ExecutionContext, ExecutionResult, Reflection, PreviousAttempt,
+    BaseAgent, ReflectiveAgentStats,
+    // Confidence-based revision (IoE pattern)
+    ConfidenceChecker, ConfidenceConfig, ConfidenceLevel, WeakPoint, RevisionResult,
+    ConfidenceCheckRecord, ConfidenceFactorWeights, WeaknessType,
+    // Error pattern learning
+    ErrorPatternLearner, ErrorPatternLearnerConfig, ErrorPattern, ErrorCluster,
+    RecoveryStrategy, RecoverySuggestion, ErrorCategory, RecoveryOutcome,
+    SimilarError, ErrorLearnerStats,
+    // Multi-perspective critique
+    Perspective, CorrectnessChecker, CompletenessChecker, ConsistencyChecker,
+    CritiqueResult, CritiqueIssue, IssueCategory, UnifiedCritique, PerspectiveConfig,
+};
+
+// ReasoningBank exports (learning from Claude trajectories)
+pub use reasoning_bank::{
+    // Main ReasoningBank
+    ReasoningBank, ReasoningBankConfig, ReasoningBankStats,
+    // Trajectory recording (aliased to avoid conflict with training::TrajectoryStep)
+    Trajectory as ReasoningTrajectory,
+    TrajectoryStep as ReasoningTrajectoryStep,
+    TrajectoryRecorder, TrajectoryId, StepOutcome,
+    // Pattern storage with HNSW
+    PatternStore, PatternStoreConfig, Pattern, PatternCategory, PatternSearchResult, PatternStats,
+    // Verdict system (aliased to avoid conflict with claude_flow::reasoning_bank::Verdict)
+    Verdict as ReasoningVerdict,
+    RootCause, VerdictAnalyzer, FailurePattern as VerdictFailurePattern,
+    RecoveryStrategy as VerdictRecoveryStrategy,
+    // EWC++ consolidation
+    PatternConsolidator, ConsolidationConfig, FisherInformation, ImportanceScore,
+    // Memory distillation
+    MemoryDistiller, DistillationConfig, CompressedTrajectory, KeyLesson,
 };
 
 // Metal GPU acceleration exports (macOS only)

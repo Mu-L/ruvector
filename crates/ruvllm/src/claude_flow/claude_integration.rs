@@ -52,6 +52,15 @@ pub enum ClaudeModel {
 }
 
 impl ClaudeModel {
+    /// Get short name for the model
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Haiku => "haiku",
+            Self::Sonnet => "sonnet",
+            Self::Opus => "opus",
+        }
+    }
+
     /// Get model identifier string
     pub fn model_id(&self) -> &'static str {
         match self {

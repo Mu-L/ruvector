@@ -174,6 +174,7 @@ mod tests {
             examples_per_category: 10,
             enable_augmentation: false,
             seed: 42,
+            ..Default::default()
         };
 
         let mut gen1 = DatasetGenerator::new(config.clone());
@@ -329,12 +330,14 @@ mod tests {
             examples_per_category: 10,
             enable_augmentation: false,
             seed: 12345,
+            ..Default::default()
         };
 
         let config2 = DatasetConfig {
             examples_per_category: 10,
             enable_augmentation: false,
             seed: 12345,
+            ..Default::default()
         };
 
         let mut gen1 = DatasetGenerator::new(config1);
@@ -357,12 +360,14 @@ mod tests {
             examples_per_category: 10,
             enable_augmentation: false,
             seed: 111,
+            ..Default::default()
         };
 
         let config2 = DatasetConfig {
             examples_per_category: 10,
             enable_augmentation: false,
             seed: 222,
+            ..Default::default()
         };
 
         let mut gen1 = DatasetGenerator::new(config1);
