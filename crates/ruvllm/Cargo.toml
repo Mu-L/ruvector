@@ -182,6 +182,10 @@ harness = false
 name = "ane_bench"
 harness = false
 
+[[bench]]
+name = "ruvltra_benchmark"
+harness = false
+
 # Test configurations
 [[test]]
 name = "real_model_test"

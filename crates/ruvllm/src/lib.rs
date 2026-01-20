@@ -44,6 +44,7 @@
 pub mod adapter_manager;
 pub mod autodetect;
 pub mod backends;
+pub mod claude_flow;
 pub mod error;
 pub mod gguf;
 pub mod kernels;
@@ -52,9 +53,11 @@ pub mod lora;
 pub mod memory_pool;
 #[cfg(all(target_os = "macos", feature = "metal-compute"))]
 pub mod metal;
+pub mod models;
 pub mod optimization;
 pub mod paged_attention;
 pub mod policy_store;
+pub mod quantize;
 pub mod serving;
 pub mod session;
 pub mod session_index;
@@ -106,6 +109,12 @@ pub use policy_store::{PolicyStore, PolicyEntry, PolicyType, QuantizationPolicy,
 pub use session::{SessionManager, Session, SessionConfig};
 pub use session_index::{SessionIndex, SessionState, KvCacheReference};
 pub use sona::{SonaIntegration, SonaConfig, LearningLoop};
+pub use claude_flow::{
+    ClaudeFlowAgent, ClaudeFlowTask,
+    AgentRouter, AgentType, RoutingDecision as AgentRoutingDecision,
+    TaskClassifier, TaskType, ClassificationResult,
+    FlowOptimizer, OptimizationConfig, OptimizationResult,
+};
 pub use optimization::{
     InferenceMetrics, MetricsCollector, MetricsSnapshot, MovingAverage, LatencyHistogram,
     RealtimeOptimizer, RealtimeConfig, BatchSizeStrategy, KvCachePressurePolicy,
@@ -147,6 +156,28 @@ pub use serving::{
     RequestQueue, PreemptionMode, PriorityPolicy,
     // Engine
     ServingEngine, ServingEngineConfig, ServingMetrics, GenerationResult,
+};
+pub use quantize::{
+    // Core quantizer
+    RuvltraQuantizer, QuantConfig, TargetFormat,
+    // Quantization functions
+    quantize_ruvltra_q4, quantize_ruvltra_q5, quantize_ruvltra_q8, dequantize_for_ane,
+    // Memory estimation
+    estimate_memory_q4, estimate_memory_q5, estimate_memory_q8, MemoryEstimate,
+    // Block types
+    Q4KMBlock, Q5KMBlock, Q8Block,
+    // Progress tracking
+    QuantProgress, QuantStats,
+};
+
+// RuvLTRA model architecture exports
+pub use models::{
+    // Configuration
+    RuvLtraConfig, AneOptimization, QuantizationType, MemoryLayout,
+    // Model components
+    RuvLtraModel, RuvLtraAttention, RuvLtraMLP, RuvLtraDecoderLayer,
+    // Utilities
+    RuvLtraModelInfo, AneDispatcher,
 };
 
 // Metal GPU acceleration exports (macOS only)

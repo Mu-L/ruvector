@@ -11,6 +11,7 @@
 //! - `ruvllm serve <model>` - Start inference server
 //! - `ruvllm chat <model>` - Interactive chat mode
 //! - `ruvllm benchmark <model>` - Run performance benchmarks
+//! - `ruvllm quantize <model>` - Quantize model to GGUF format
 
 use clap::{Parser, Subcommand};
 use colored::Colorize;
@@ -19,7 +20,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 mod commands;
 mod models;
 
-use commands::{benchmark, chat, download, info, list, serve};
+use commands::{benchmark, chat, download, info, list, quantize, serve};
 
 /// RuvLLM - High-performance LLM inference for Apple Silicon
 #[derive(Parser)]
@@ -175,6 +176,50 @@ enum Commands {
         #[arg(long, default_value = "text")]
         format: String,
     },
+
+    /// Quantize a model to GGUF format
+    ///
+    /// Supports Q4_K_M (4-bit), Q5_K_M (5-bit), and Q8_0 (8-bit) quantization.
+    /// Optimized for Apple Neural Engine (ANE) inference on M4 Pro.
+    ///
+    /// Examples:
+    ///   ruvllm quantize --model qwen-0.5b --output ruvltra-small-q4.gguf --quant q4_k_m
+    ///   ruvllm quantize --model ./model.safetensors --quant q8_0 --ane-optimize
+    #[command(alias = "quant")]
+    Quantize {
+        /// Model to quantize (path or HuggingFace ID)
+        #[arg(short, long)]
+        model: String,
+
+        /// Output file path (default: <model>-<quant>.gguf)
+        #[arg(short, long, default_value = "")]
+        output: String,
+
+        /// Quantization format: q4_k_m, q5_k_m, q8_0, f16
+        ///
+        /// Memory estimates for 0.5B model:
+        /// - q4_k_m: ~300 MB (best quality/size tradeoff)
+        /// - q5_k_m: ~375 MB (higher quality)
+        /// - q8_0:   ~500 MB (near-lossless)
+        #[arg(short, long, default_value = "q4_k_m")]
+        quant: String,
+
+        /// Enable ANE-optimized weight layouts (16-byte aligned, tiled)
+        #[arg(long, default_value = "true")]
+        ane_optimize: bool,
+
+        /// Keep embedding layer in FP16 (recommended for quality)
+        #[arg(long, default_value = "true")]
+        keep_embed_fp16: bool,
+
+        /// Keep output/LM head layer in FP16 (recommended for quality)
+        #[arg(long, default_value = "true")]
+        keep_output_fp16: bool,
+
+        /// Show detailed progress and statistics
+        #[arg(long)]
+        verbose: bool,
+    },
 }
 
 #[tokio::main]
@@ -283,6 +328,28 @@ async fn main() -> anyhow::Result<()> {
                 gen_length,
                 &quantization,
                 &format,
+                &cache_dir,
+            )
+            .await
+        }
+
+        Commands::Quantize {
+            model,
+            output,
+            quant,
+            ane_optimize,
+            keep_embed_fp16,
+            keep_output_fp16,
+            verbose,
+        } => {
+            quantize::run(
+                &model,
+                &output,
+                &quant,
+                ane_optimize,
+                keep_embed_fp16,
+                keep_output_fp16,
+                verbose,
                 &cache_dir,
             )
             .await
