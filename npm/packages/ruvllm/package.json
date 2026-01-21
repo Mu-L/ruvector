@@ -115,6 +115,7 @@
   "files": [
     "dist",
     "bin",
+    "scripts",
     "*.node",
     "README.md"
   ]

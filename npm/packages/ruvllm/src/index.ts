@@ -80,6 +80,9 @@ export * from './export';
 // Training pipeline
 export * from './training';
 
+// Contrastive fine-tuning
+export * from './contrastive';
+
 // Model downloader and registry
 export * from './models';
 

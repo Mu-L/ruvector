@@ -13,7 +13,7 @@
  *   ruvllm benchmark
  */
 
-const { RuvLLM, SimdOps, version, hasSimdSupport, ModelDownloader, listModels, getModelInfo, RUVLTRA_MODELS, getDefaultModelsDir, runRoutingBenchmark, formatRoutingResults, baselineKeywordRouter, runEmbeddingBenchmark, formatEmbeddingResults, runFullBenchmark, formatFullResults, ROUTING_TEST_CASES } = require('../dist/cjs/index.js');
+const { RuvLLM, SimdOps, version, hasSimdSupport, ModelDownloader, listModels, getModelInfo, RUVLTRA_MODELS, getDefaultModelsDir, runRoutingBenchmark, formatRoutingResults, baselineKeywordRouter, runEmbeddingBenchmark, formatEmbeddingResults, runFullBenchmark, formatFullResults, ROUTING_TEST_CASES, runFullComparison, formatComparisonResults, ContrastiveTrainer, AGENT_TRAINING_DATA, generateTrainingDataset, generateContrastivePairs, getDatasetStats, tripletLoss, cosineSimilarity } = require('../dist/cjs/index.js');
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -500,6 +500,208 @@ async function runBenchmarkEmbedding(flags) {
   }
 }
 
+async function runBenchmarkCompare(flags) {
+  try {
+    const results = await runFullComparison();
+
+    if (flags.json) {
+      console.log(JSON.stringify(results, null, 2));
+    } else {
+      console.log(formatComparisonResults(results));
+    }
+  } catch (error) {
+    console.error('Comparison failed:', error.message);
+    process.exit(1);
+  }
+}
+
+// Training commands
+async function runTrainContrastive(flags) {
+  console.log('\n╔═══════════════════════════════════════════════════════════════════════════╗');
+  console.log('║           RuvLTRA Contrastive Fine-tuning Pipeline                        ║');
+  console.log('╚═══════════════════════════════════════════════════════════════════════════╝\n');
+
+  const stats = getDatasetStats();
+  const outputPath = flags.output || './training-output';
+
+  console.log(`Training examples: ${stats.totalExamples}`);
+  console.log(`Contrastive pairs: ${stats.contrastivePairs}`);
+  console.log(`Agent types: ${stats.agentTypes}`);
+  console.log(`Output: ${outputPath}\n`);
+
+  // Create trainer
+  const trainer = new ContrastiveTrainer({
+    epochs: parseInt(flags.epochs) || 10,
+    batchSize: parseInt(flags['batch-size']) || 16,
+    learningRate: parseFloat(flags.lr) || 0.0001,
+    margin: parseFloat(flags.margin) || 0.5,
+    outputPath,
+  });
+
+  // Get embeddings for agents
+  const llm = new RuvLLM({ embeddingDim: 768, learningEnabled: false });
+  const agentEmbeddings = {};
+
+  console.log('Computing agent embeddings...');
+  for (const [agent, data] of Object.entries(AGENT_TRAINING_DATA)) {
+    process.stdout.write(`  ${agent}... `);
+    try {
+      const emb = llm.embed(data.description);
+      agentEmbeddings[agent] = emb;
+      trainer.addAgentEmbedding(agent, emb);
+      console.log('done');
+    } catch (e) {
+      // Fallback embedding
+      const hash = data.description.split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0);
+      const emb = Array.from({ length: 768 }, (_, i) => Math.sin(hash + i) * 0.5);
+      agentEmbeddings[agent] = emb;
+      trainer.addAgentEmbedding(agent, emb);
+      console.log('done (fallback)');
+    }
+  }
+
+  // Generate triplets
+  console.log('\nGenerating training triplets...');
+  const examples = generateTrainingDataset();
+  const agents = Object.keys(AGENT_TRAINING_DATA);
+
+  let tripletCount = 0;
+  for (const example of examples.slice(0, 200)) { // Limit for speed
+    let taskEmb;
+    try {
+      taskEmb = llm.embed(example.task);
+    } catch (e) {
+      const hash = example.task.split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0);
+      taskEmb = Array.from({ length: 768 }, (_, i) => Math.sin(hash + i) * 0.5);
+    }
+
+    const positiveAgent = example.agent;
+    const positiveEmb = agentEmbeddings[positiveAgent];
+
+    // Hard negatives
+    const hardNegatives = example.confusing_with
+      ? [example.confusing_with]
+      : agents.filter(a => a !== positiveAgent).slice(0, 2);
+
+    for (const negAgent of hardNegatives) {
+      const negEmb = agentEmbeddings[negAgent];
+      if (negEmb) {
+        trainer.addTriplet(
+          example.task, taskEmb,
+          positiveAgent, positiveEmb,
+          negAgent, negEmb,
+          !!example.confusing_with
+        );
+        tripletCount++;
+      }
+    }
+  }
+
+  console.log(`Created ${tripletCount} triplets\n`);
+
+  // Train
+  console.log('Training...');
+  const result = trainer.train();
+
+  // Export data
+  console.log('\nExporting training data...');
+  const exportPath = trainer.exportTrainingData();
+  const loraConfig = trainer.generateLoRAConfig();
+  const scriptPath = trainer.generateTrainingScript();
+
+  // Summary
+  console.log('\n═══════════════════════════════════════════════════════════════════════════');
+  console.log('                              TRAINING SUMMARY');
+  console.log('═══════════════════════════════════════════════════════════════════════════\n');
+
+  console.log('Training data exported:');
+  console.log(`  - ${exportPath}/triplets.jsonl (${tripletCount} triplets)`);
+  console.log(`  - ${exportPath}/triplets.csv (spreadsheet format)`);
+  console.log(`  - ${exportPath}/embeddings.json (precomputed embeddings)`);
+  console.log(`  - ${exportPath}/lora_config.json (LoRA configuration)`);
+  console.log(`  - ${exportPath}/train.sh (training script)\n`);
+
+  console.log('Training loss (simulated):');
+  console.log(`  Initial: ${result.initialLoss.toFixed(4)}`);
+  console.log(`  Final:   ${result.finalLoss.toFixed(4)}`);
+  console.log(`  Improvement: ${result.improvement.toFixed(1)}%\n`);
+
+  console.log('To fine-tune on GPU:');
+  console.log(`  cd ${exportPath}`);
+  console.log('  chmod +x train.sh && ./train.sh\n');
+}
+
+async function runTrainDataset(flags) {
+  console.log('\n╔═══════════════════════════════════════════════════════════════════════════╗');
+  console.log('║               RuvLTRA Training Dataset Generator                          ║');
+  console.log('╚═══════════════════════════════════════════════════════════════════════════╝\n');
+
+  const stats = getDatasetStats();
+  const outputPath = flags.output || './data/training';
+
+  console.log(`Generating training data for ${stats.agentTypes} agent types...\n`);
+
+  // Generate dataset
+  const examples = generateTrainingDataset();
+  const pairs = generateContrastivePairs();
+
+  // Export
+  const { existsSync, mkdirSync, writeFileSync } = require('fs');
+  const { join } = require('path');
+
+  if (!existsSync(outputPath)) {
+    mkdirSync(outputPath, { recursive: true });
+  }
+
+  // JSONL format
+  writeFileSync(
+    join(outputPath, 'routing-examples.jsonl'),
+    examples.map(e => JSON.stringify(e)).join('\n')
+  );
+
+  // Contrastive pairs
+  writeFileSync(
+    join(outputPath, 'contrastive-pairs.jsonl'),
+    pairs.map(p => JSON.stringify(p)).join('\n')
+  );
+
+  // CSV format
+  const csv = [
+    'task,agent,complexity,confusing_with',
+    ...examples.map(e => `"${e.task.replace(/"/g, '""')}",${e.agent},${e.complexity || ''},${e.confusing_with || ''}`)
+  ].join('\n');
+  writeFileSync(join(outputPath, 'routing-examples.csv'), csv);
+
+  console.log('Export complete:');
+  console.log(`  - ${join(outputPath, 'routing-examples.jsonl')} (${examples.length} examples)`);
+  console.log(`  - ${join(outputPath, 'contrastive-pairs.jsonl')} (${pairs.length} pairs)`);
+  console.log(`  - ${join(outputPath, 'routing-examples.csv')} (spreadsheet format)\n`);
+
+  console.log('Dataset statistics:');
+  console.log(`  Total examples: ${stats.totalExamples}`);
+  console.log(`  Contrastive pairs: ${stats.contrastivePairs}`);
+  console.log(`  Agent types: ${stats.agentTypes}`);
+  console.log(`  Agents: ${stats.agents.join(', ')}\n`);
+}
+
+async function runTrainStats(flags) {
+  const stats = getDatasetStats();
+
+  if (flags.json) {
+    console.log(JSON.stringify(stats, null, 2));
+  } else {
+    console.log('\nTraining Dataset Statistics:');
+    console.log(`  Total examples: ${stats.totalExamples}`);
+    console.log(`  Contrastive pairs: ${stats.contrastivePairs}`);
+    console.log(`  Agent types: ${stats.agentTypes}`);
+    console.log('\nAgents:');
+    for (const agent of stats.agents) {
+      const data = AGENT_TRAINING_DATA[agent];
+      console.log(`  - ${agent}: ${data.examples.length} examples, ${data.keywords.length} keywords`);
+    }
+  }
+}
+
 async function runBenchmarkFull(flags) {
   console.log('\n╔═══════════════════════════════════════════════════════════════════════════╗');
   console.log('║                    RUVLTRA FULL BENCHMARK SUITE                           ║');
@@ -585,7 +787,13 @@ Claude Code Benchmarks:
   benchmark routing         Test agent routing accuracy (100 tasks)
   benchmark embedding       Test embedding quality (similarity, search, clustering)
   benchmark full            Run complete benchmark suite
+  benchmark compare         Compare Qwen base vs RuvLTRA Claude Code
   benchmark simd            Run SIMD performance benchmark
+
+Training & Fine-tuning:
+  train contrastive         Run contrastive fine-tuning pipeline
+  train dataset             Generate training dataset (JSONL, CSV)
+  train stats               Show training dataset statistics
 
 Options:
   --json                    Output as JSON
@@ -599,6 +807,11 @@ Options:
   --iterations <int>        Iterations for benchmark (default: 1000)
   --force                   Force re-download even if model exists
   --all                     Apply to all models (download/delete)
+  --output <path>           Output directory for training data
+  --epochs <int>            Number of training epochs (default: 10)
+  --batch-size <int>        Training batch size (default: 16)
+  --lr <float>              Learning rate (default: 0.0001)
+  --margin <float>          Triplet loss margin (default: 0.5)
 
 Available Models (from https://huggingface.co/ruv/ruvltra):
   claude-code               RuvLTRA Claude Code (398MB) - Claude Code workflows
@@ -623,6 +836,12 @@ Examples:
   ruvllm benchmark routing            # Test task routing accuracy
   ruvllm benchmark embedding          # Test embedding quality
   ruvllm benchmark full               # Run complete benchmark suite
+
+  # Training & fine-tuning
+  ruvllm train contrastive            # Run contrastive fine-tuning
+  ruvllm train dataset                # Generate training dataset
+  ruvllm train stats                  # Show dataset statistics
+  ruvllm train contrastive --epochs 20 --output ./my-training
 
 Learn more: https://github.com/ruvnet/ruvector
 `);
@@ -718,12 +937,14 @@ async function main() {
           await runBenchmarkEmbedding(flags);
         } else if (benchSubcmd === 'full' || benchSubcmd === 'all') {
           await runBenchmarkFull(flags);
+        } else if (benchSubcmd === 'compare') {
+          await runBenchmarkCompare(flags);
         } else if (benchSubcmd === 'simd' || !benchSubcmd) {
           // Default to SIMD benchmark for backwards compatibility
           await runBenchmark(flags);
         } else {
           console.error(`Unknown benchmark type: ${benchSubcmd}`);
-          console.error('Available: routing, embedding, full, simd');
+          console.error('Available: routing, embedding, full, simd, compare');
           process.exit(1);
         }
         break;
@@ -745,6 +966,21 @@ async function main() {
         } else {
           // Treat subcommand as model ID for download
           await runModelsDownload(modelsSubcmd, flags);
+        }
+        break;
+
+      case 'train':
+        const trainSubcmd = positional[0];
+        if (!trainSubcmd || trainSubcmd === 'contrastive') {
+          await runTrainContrastive(flags);
+        } else if (trainSubcmd === 'dataset') {
+          await runTrainDataset(flags);
+        } else if (trainSubcmd === 'stats') {
+          await runTrainStats(flags);
+        } else {
+          console.error(`Unknown train subcommand: ${trainSubcmd}`);
+          console.error('Available: contrastive, dataset, stats');
+          process.exit(1);
         }
         break;
 

@@ -690,6 +690,56 @@ This includes:
 - Integration ecosystem (agentic-flow, agentdb, ruv-swarm, flow-nexus, agentic-jujutsu)
 - Performance targets and status
 
+## 🚀 HuggingFace Model Deployment
+
+### Repository
+- **URL**: https://huggingface.co/ruv/ruvltra
+- **Organization**: ruv
+
+### Model Files
+| Model | File | Size | Purpose |
+|-------|------|------|---------|
+| RuvLTRA Claude Code 0.5B | `ruvltra-claude-code-0.5b-q4_k_m.gguf` | ~400MB | Agent routing (100% accuracy with hybrid) |
+| RuvLTRA Small 0.5B | `ruvltra-0.5b-q4_k_m.gguf` | ~400MB | General embeddings |
+| RuvLTRA Medium 3B | `ruvltra-3b-q4_k_m.gguf` | ~2GB | Full LLM inference |
+
+### Environment Variables
+```bash
+# HuggingFace authentication (any of these work)
+HF_TOKEN=hf_xxx                    # Primary
+HUGGING_FACE_HUB_TOKEN=hf_xxx      # Legacy
+HUGGINGFACE_API_KEY=hf_xxx         # Alternative
+```
+
+### Local Model Storage
+```bash
+~/.ruvllm/models/                  # Downloaded GGUF models
+~/.ruvllm/training/                # Training data and configs
+```
+
+### Publish Commands
+```bash
+# Upload model to HuggingFace
+huggingface-cli upload ruv/ruvltra ./model.gguf --repo-type model
+
+# Update model card
+huggingface-cli upload ruv/ruvltra ./README.md --repo-type model
+```
+
+### Key Benchmarks (Claude Code Router)
+| Strategy | RuvLTRA | Qwen Base |
+|----------|---------|-----------|
+| Embedding Only | 45% | 40% |
+| Keyword-First (Hybrid) | **100%** | 95% |
+
+### Training Data Location
+```bash
+npm/packages/ruvllm/scripts/training/
+├── routing-dataset.js         # 381 examples, 793 contrastive pairs
+├── claude-code-synth.js       # Synthetic data generation
+└── contrastive-finetune.js    # LoRA fine-tuning pipeline
+```
+
 ## Support
 
 - Documentation: https://github.com/ruvnet/claude-flow

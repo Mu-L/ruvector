@@ -30,8 +30,10 @@
 //! ```
 
 pub mod claude_dataset;
+pub mod contrastive;
 pub mod grpo;
 pub mod mcp_tools;
+pub mod real_trainer;
 pub mod tool_dataset;
 
 #[cfg(test)]
@@ -59,4 +61,18 @@ pub use mcp_tools::{
 pub use tool_dataset::{
     DifficultyLevel, DifficultyWeights, McpToolDef, ParamType, ToolCallDataset, ToolCallExample,
     ToolCategory as McpToolCategory, ToolDatasetConfig, ToolDatasetStats, ToolParam,
+};
+
+// Contrastive learning exports
+pub use contrastive::{
+    AgentEmbedding, ContrastiveConfig, ContrastiveTrainer,
+    TrainingResult as ContrastiveResult, TrainingStats as ContrastiveStats,
+    TrainingTriplet, AGENT_DESCRIPTIONS,
+};
+
+// Real trainer exports (Candle-based with GGUF export)
+pub use real_trainer::{
+    EpochStats, GgufExportMetadata, GgufExportResult, GrpoEvaluator, GrpoFeedback,
+    LayerMetadata, RealContrastiveTrainer, RealTrainingConfig, RealTrainingResult,
+    TrainingConfigMeta, run_training_pipeline,
 };

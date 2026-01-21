@@ -7,6 +7,7 @@
 
 export * from './routing-benchmark';
 export * from './embedding-benchmark';
+export * from './model-comparison';
 
 import {
   runRoutingBenchmark,
