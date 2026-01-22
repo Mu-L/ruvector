@@ -22,7 +22,10 @@ pub use policy::{
     PolicyBundleId, PolicyBundleRef, PolicyBundleStatus, PolicyError, ThresholdConfig,
 };
 
-pub use witness::{WitnessChainError, WitnessError, WitnessId, WitnessRecord};
+pub use witness::{
+    ComputeLane as WitnessComputeLane, EnergySnapshot, GateDecision,
+    WitnessChainError, WitnessError, WitnessId, WitnessRecord,
+};
 
 pub use lineage::{EntityRef, LineageError, LineageId, LineageRecord, Operation};
 

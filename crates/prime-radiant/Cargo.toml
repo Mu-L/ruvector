@@ -65,6 +65,10 @@ ruvector-core = { path = "../ruvector-core", default-features = false }
 # Provides: GraphStore, AdjacencyList
 ruvector-graph = { path = "../ruvector-graph", default-features = false, optional = true }
 
+# LLM serving runtime with Ruvector integration (ruvllm)
+# Provides: WitnessLog, RoutingDecision, ModelSize, QualityMetrics
+ruvllm = { path = "../ruvllm", default-features = false, features = ["async-runtime"], optional = true }
+
 # -----------------------------------------------------------------------------
 # Math and Numerics
 # -----------------------------------------------------------------------------
@@ -171,6 +175,7 @@ full = [
     "spectral",
     "graph-integration",
     "archive",
+    "ruvllm",
 ]
 
 # -----------------------------------------------------------------------------
@@ -212,6 +217,11 @@ archive = ["rkyv"]
 # -----------------------------------------------------------------------------
 wasm = []
 
+# -----------------------------------------------------------------------------
+# RuvLLM Integration
+# -----------------------------------------------------------------------------
+ruvllm = ["dep:ruvllm"]
+
 # ============================================================================
 # TESTS
 # ============================================================================
@@ -231,6 +241,11 @@ path = "tests/replay_determinism.rs"
 [[test]]
 name = "chaos_tests"
 path = "tests/chaos_tests.rs"
+
+[[test]]
+name = "ruvllm_integration_tests"
+path = "tests/ruvllm_integration_tests.rs"
+required-features = ["ruvllm"]
 
 # ============================================================================
 # BENCHMARKS (only existing ones)

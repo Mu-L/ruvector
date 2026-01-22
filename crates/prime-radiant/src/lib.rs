@@ -218,6 +218,11 @@ pub mod attention;
 #[cfg_attr(docsrs, doc(cfg(feature = "distributed")))]
 pub mod distributed;
 
+/// RuvLLM integration - coherence-to-confidence mapping and LLM gating
+#[cfg(feature = "ruvllm")]
+#[cfg_attr(docsrs, doc(cfg(feature = "ruvllm")))]
+pub mod ruvllm_integration;
+
 // -----------------------------------------------------------------------------
 // Shared Types and Errors
 // -----------------------------------------------------------------------------
@@ -333,6 +338,11 @@ pub use attention::{
 pub use distributed::{
     DistributedCoherence, DistributedCoherenceConfig, RaftAdapter,
     CoherenceStateMachine, ClusterStatus, CoherenceStatus, NodeRole,
+};
+
+#[cfg(feature = "ruvllm")]
+pub use ruvllm_integration::{
+    CoherenceConfidence, ConfidenceLevel, ConfidenceScore, EnergyContributor,
 };
 
 // ============================================================================
