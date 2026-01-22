@@ -1979,7 +1979,7 @@ await db.sync('https://api.example.com/vectors');
 </details>
 
 <details>
-<summary>WASM & Utility Packages</summary>
+<summary>🍕 WASM & Utility Packages</summary>
 
 | Package | Description | Version | Downloads |
 |---------|-------------|---------|-----------|
@@ -1994,7 +1994,6 @@ await db.sync('https://api.example.com/vectors');
 | [@ruvector/graph-data-generator](https://www.npmjs.com/package/@ruvector/graph-data-generator) | Graph data generation | [![npm](https://img.shields.io/npm/v/@ruvector/graph-data-generator.svg)](https://www.npmjs.com/package/@ruvector/graph-data-generator) | [![downloads](https://img.shields.io/npm/dt/@ruvector/graph-data-generator.svg)](https://www.npmjs.com/package/@ruvector/graph-data-generator) |
 | [@ruvector/agentic-integration](https://www.npmjs.com/package/@ruvector/agentic-integration) | Agentic workflows | [![npm](https://img.shields.io/npm/v/@ruvector/agentic-integration.svg)](https://www.npmjs.com/package/@ruvector/agentic-integration) | [![downloads](https://img.shields.io/npm/dt/@ruvector/agentic-integration.svg)](https://www.npmjs.com/package/@ruvector/agentic-integration) |
 
-</details>
 
 **Platform-specific native bindings** (auto-detected):
 - `@ruvector/node-linux-x64-gnu`, `@ruvector/node-linux-arm64-gnu`, `@ruvector/node-darwin-x64`, `@ruvector/node-darwin-arm64`, `@ruvector/node-win32-x64-msvc`
@@ -2096,7 +2095,7 @@ let sync = SyncManager::new(SyncMode::SemiSync { min_replicas: 2 });
 
 
 <details>
-<summary><strong>🎓 RuvLLM Training & Fine-Tuning Tutorials</strong></summary>
+<summary>🎓 RuvLLM Training & RLM Fine-Tuning Tutorials </summary>
 
 #### Hybrid Routing (90% Accuracy)
 
