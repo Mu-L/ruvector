@@ -103,8 +103,9 @@ pub struct GpuParams {
     pub threshold_lane1: f32,
     /// Lane 2 threshold (heavy)
     pub threshold_lane2: f32,
-    /// Padding for alignment
-    pub _padding: u32,
+    /// Flag to control residual storage (0 = skip, 1 = store)
+    /// When computing energy only, skip storage for better performance
+    pub store_residuals: u32,
 }
 
 /// Wrapper around a wgpu Buffer with metadata

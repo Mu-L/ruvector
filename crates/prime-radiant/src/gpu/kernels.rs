@@ -185,6 +185,54 @@ impl ComputeResidualsKernel {
         })
     }
 
+    /// Create a bind group using raw wgpu buffers (for pre-allocated buffer optimization)
+    pub fn create_bind_group_raw(
+        &self,
+        device: &Device,
+        params_buffer: &wgpu::Buffer,
+        node_states_buffer: &wgpu::Buffer,
+        edges_buffer: &wgpu::Buffer,
+        restriction_maps_buffer: &wgpu::Buffer,
+        restriction_data_buffer: &wgpu::Buffer,
+        residuals_buffer: &wgpu::Buffer,
+        residual_norms_buffer: &wgpu::Buffer,
+    ) -> BindGroup {
+        device.create_bind_group(&BindGroupDescriptor {
+            label: Some("compute_residuals_bind_group_raw"),
+            layout: &self.bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: params_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: node_states_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: edges_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: restriction_maps_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: restriction_data_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: residuals_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 6,
+                    resource: residual_norms_buffer.as_entire_binding(),
+                },
+            ],
+        })
+    }
+
     /// Get the pipeline for use in command encoder
     pub fn pipeline(&self) -> &ComputePipeline {
         &self.pipeline
@@ -315,6 +363,34 @@ impl ComputeEnergyKernel {
                 BindGroupEntry {
                     binding: 2,
                     resource: output_buffer.buffer.as_entire_binding(),
+                },
+            ],
+        })
+    }
+
+    /// Create a bind group using raw wgpu buffers (for pre-allocated buffer optimization)
+    pub fn create_bind_group_raw(
+        &self,
+        device: &Device,
+        params_buffer: &wgpu::Buffer,
+        input_buffer: &wgpu::Buffer,
+        output_buffer: &wgpu::Buffer,
+    ) -> BindGroup {
+        device.create_bind_group(&BindGroupDescriptor {
+            label: Some("compute_energy_bind_group_raw"),
+            layout: &self.bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: params_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: input_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: output_buffer.as_entire_binding(),
                 },
             ],
         })

@@ -54,7 +54,9 @@ pub use graph::{
     SheafGraph, SheafGraphBuilder,
 };
 pub use node::{NodeId, NodeMetadata, SheafNode, SheafNodeBuilder, StateVector};
-pub use restriction::{MatrixStorage, RestrictionMap, RestrictionMapBuilder, RestrictionMapError};
+pub use restriction::{
+    CsrMatrix, MatrixStorage, RestrictionMap, RestrictionMapBuilder, RestrictionMapError,
+};
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

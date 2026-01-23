@@ -7,8 +7,7 @@
 //! - Governance storage operations
 
 use prime_radiant::storage::{
-    file::{FileStorage, StorageFormat},
-    memory::InMemoryStorage,
+    FileStorage, InMemoryStorage, StorageFormat,
     GovernanceStorage, GraphStorage,
 };
 use std::sync::{Arc, Barrier};
@@ -129,13 +128,13 @@ mod in_memory_storage_tests {
 
     #[test]
     fn test_concurrent_node_writes() {
-        let storage = Arc::new(InMemoryStorage::new());
+        let storage: Arc<InMemoryStorage> = Arc::new(InMemoryStorage::new());
         let num_threads = 10;
         let barrier = Arc::new(Barrier::new(num_threads));
         let mut handles = vec![];
 
         for i in 0..num_threads {
-            let storage_clone = Arc::clone(&storage);
+            let storage_clone: Arc<InMemoryStorage> = Arc::clone(&storage);
             let barrier_clone = Arc::clone(&barrier);
 
             let handle = thread::spawn(move || {
@@ -165,7 +164,7 @@ mod in_memory_storage_tests {
 
     #[test]
     fn test_concurrent_reads_and_writes() {
-        let storage = Arc::new(InMemoryStorage::new());
+        let storage: Arc<InMemoryStorage> = Arc::new(InMemoryStorage::new());
 
         // Pre-populate some data
         for i in 0..100 {
@@ -179,7 +178,7 @@ mod in_memory_storage_tests {
         let mut handles = vec![];
 
         for i in 0..num_threads {
-            let storage_clone = Arc::clone(&storage);
+            let storage_clone: Arc<InMemoryStorage> = Arc::clone(&storage);
             let barrier_clone = Arc::clone(&barrier);
 
             let handle = thread::spawn(move || {
@@ -409,14 +408,14 @@ mod file_storage_tests {
     #[test]
     fn test_concurrent_file_operations() {
         let temp_dir = TempDir::new().unwrap();
-        let storage = Arc::new(FileStorage::new(temp_dir.path()).unwrap());
+        let storage: Arc<FileStorage> = Arc::new(FileStorage::new(temp_dir.path()).unwrap());
 
         let num_threads = 4;
         let barrier = Arc::new(Barrier::new(num_threads));
         let mut handles = vec![];
 
         for i in 0..num_threads {
-            let storage_clone = Arc::clone(&storage);
+            let storage_clone: Arc<FileStorage> = Arc::clone(&storage);
             let barrier_clone = Arc::clone(&barrier);
 
             let handle = thread::spawn(move || {
@@ -569,7 +568,7 @@ mod integration_tests {
     #[test]
     fn test_storage_fallback_pattern() {
         let temp_dir = TempDir::new().unwrap();
-        let file_storage = Arc::new(FileStorage::new(temp_dir.path()).unwrap());
+        let file_storage: Arc<FileStorage> = Arc::new(FileStorage::new(temp_dir.path()).unwrap());
         let memory_cache = InMemoryStorage::new();
 
         // Simulate a read-through cache pattern

@@ -20,6 +20,186 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+/// CSR (Compressed Sparse Row) format for efficient sparse matrix-vector multiply
+///
+/// This format provides O(nnz) iteration for matrix-vector products, with excellent
+/// cache locality for row-wise access patterns. The format stores:
+/// - `row_ptr`: Row pointers where `row_ptr[i]` is the start index in col_indices/values for row i
+/// - `col_indices`: Column indices for each non-zero element
+/// - `values`: Values for each non-zero element
+///
+/// For a matrix with `m` rows and `nnz` non-zeros:
+/// - `row_ptr` has length `m + 1`
+/// - `col_indices` and `values` have length `nnz`
+/// - Row `i` spans indices `row_ptr[i]..row_ptr[i+1]`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CsrMatrix {
+    /// Row pointers: row_ptr[i] is the start index in col_indices/values for row i
+    pub row_ptr: Vec<usize>,
+    /// Column indices for each non-zero
+    pub col_indices: Vec<usize>,
+    /// Values for each non-zero
+    pub values: Vec<f32>,
+    /// Number of rows
+    pub rows: usize,
+    /// Number of columns
+    pub cols: usize,
+}
+
+impl CsrMatrix {
+    /// Create a CSR matrix from COO (Coordinate) format entries
+    ///
+    /// # Arguments
+    /// * `rows` - Number of rows in the matrix
+    /// * `cols` - Number of columns in the matrix
+    /// * `entries` - Iterator of (row, col, value) tuples
+    ///
+    /// # Panics
+    /// Panics if any row or column index is out of bounds
+    pub fn from_coo<I>(rows: usize, cols: usize, entries: I) -> Self
+    where
+        I: IntoIterator<Item = (usize, usize, f32)>,
+    {
+        // Collect and sort by row, then by column for cache-friendly access
+        let mut sorted: Vec<_> = entries.into_iter().collect();
+        sorted.sort_by_key(|(r, c, _)| (*r, *c));
+
+        let nnz = sorted.len();
+        let mut row_ptr = vec![0usize; rows + 1];
+        let mut col_indices = Vec::with_capacity(nnz);
+        let mut values = Vec::with_capacity(nnz);
+
+        // Count entries per row first
+        for &(r, _, _) in &sorted {
+            debug_assert!(r < rows, "Row index {} out of bounds (rows={})", r, rows);
+            row_ptr[r + 1] += 1;
+        }
+
+        // Cumulative sum to get row pointers
+        for i in 1..=rows {
+            row_ptr[i] += row_ptr[i - 1];
+        }
+
+        // Fill column indices and values
+        for (_, c, v) in sorted {
+            debug_assert!(c < cols, "Column index {} out of bounds (cols={})", c, cols);
+            col_indices.push(c);
+            values.push(v);
+        }
+
+        Self {
+            row_ptr,
+            col_indices,
+            values,
+            rows,
+            cols,
+        }
+    }
+
+    /// Create a CSR matrix from separate COO arrays
+    pub fn from_coo_arrays(
+        rows: usize,
+        cols: usize,
+        row_indices: &[usize],
+        col_indices: &[usize],
+        values: &[f32],
+    ) -> Self {
+        debug_assert_eq!(row_indices.len(), col_indices.len());
+        debug_assert_eq!(row_indices.len(), values.len());
+
+        let entries = row_indices
+            .iter()
+            .zip(col_indices.iter())
+            .zip(values.iter())
+            .map(|((&r, &c), &v)| (r, c, v));
+
+        Self::from_coo(rows, cols, entries)
+    }
+
+    /// Number of non-zero elements
+    #[inline]
+    pub fn nnz(&self) -> usize {
+        self.values.len()
+    }
+
+    /// Matrix-vector multiply: output = A * input
+    ///
+    /// # Performance
+    /// This is the primary advantage of CSR format:
+    /// - O(nnz) operations
+    /// - Excellent cache locality (sequential access to col_indices and values)
+    /// - Row-wise parallelizable
+    #[inline]
+    pub fn matvec(&self, input: &[f32]) -> Vec<f32> {
+        let mut output = vec![0.0; self.rows];
+        self.matvec_into(input, &mut output);
+        output
+    }
+
+    /// Matrix-vector multiply into pre-allocated output buffer
+    ///
+    /// # Performance
+    /// This avoids allocation overhead when the output buffer can be reused.
+    /// The inner loop is SIMD-friendly due to:
+    /// - Sequential memory access for col_indices and values
+    /// - Accumulator pattern that compilers can vectorize
+    #[inline]
+    pub fn matvec_into(&self, input: &[f32], output: &mut [f32]) {
+        debug_assert_eq!(input.len(), self.cols, "Input dimension mismatch");
+        debug_assert_eq!(output.len(), self.rows, "Output dimension mismatch");
+
+        output.fill(0.0);
+
+        for row in 0..self.rows {
+            let start = self.row_ptr[row];
+            let end = self.row_ptr[row + 1];
+
+            // Use a local accumulator to avoid repeated memory access to output[row]
+            let mut sum = 0.0f32;
+
+            // Process in chunks of 4 for better ILP
+            let chunk_end = start + ((end - start) / 4) * 4;
+            let mut idx = start;
+
+            while idx < chunk_end {
+                // SAFETY: We're within bounds since idx < chunk_end < end <= values.len()
+                sum += self.values[idx] * input[self.col_indices[idx]];
+                sum += self.values[idx + 1] * input[self.col_indices[idx + 1]];
+                sum += self.values[idx + 2] * input[self.col_indices[idx + 2]];
+                sum += self.values[idx + 3] * input[self.col_indices[idx + 3]];
+                idx += 4;
+            }
+
+            // Handle remainder
+            while idx < end {
+                sum += self.values[idx] * input[self.col_indices[idx]];
+                idx += 1;
+            }
+
+            output[row] = sum;
+        }
+    }
+
+    /// Add the result of matrix-vector multiply to existing output: output += A * input
+    #[inline]
+    pub fn matvec_add_into(&self, input: &[f32], output: &mut [f32]) {
+        debug_assert_eq!(input.len(), self.cols, "Input dimension mismatch");
+        debug_assert_eq!(output.len(), self.rows, "Output dimension mismatch");
+
+        for row in 0..self.rows {
+            let start = self.row_ptr[row];
+            let end = self.row_ptr[row + 1];
+            let mut sum = 0.0f32;
+
+            for idx in start..end {
+                sum += self.values[idx] * input[self.col_indices[idx]];
+            }
+
+            output[row] += sum;
+        }
+    }
+}
+
 /// Errors that can occur when working with restriction maps
 #[derive(Debug, Error)]
 pub enum RestrictionMapError {
@@ -44,6 +224,7 @@ pub enum MatrixStorage {
     /// Diagonal matrix (only diagonal elements stored)
     Diagonal(Vec<f32>),
     /// Sparse matrix in COO format (row, col, value)
+    /// Note: For better performance, use `Csr` format which provides O(nnz) iteration
     Sparse {
         rows: Vec<usize>,
         cols: Vec<usize>,
@@ -51,6 +232,9 @@ pub enum MatrixStorage {
         output_dim: usize,
         input_dim: usize,
     },
+    /// Sparse matrix in CSR (Compressed Sparse Row) format
+    /// Preferred for sparse matrices - provides O(nnz) iteration with excellent cache locality
+    Csr(CsrMatrix),
     /// Dense matrix stored in row-major order
     Dense {
         data: Vec<f32>,
@@ -72,6 +256,7 @@ impl MatrixStorage {
             MatrixStorage::Identity => 0, // Unknown until applied
             MatrixStorage::Diagonal(d) => d.len(),
             MatrixStorage::Sparse { input_dim, .. } => *input_dim,
+            MatrixStorage::Csr(csr) => csr.cols,
             MatrixStorage::Dense { input_dim, .. } => *input_dim,
             MatrixStorage::Projection { input_dim, .. } => *input_dim,
         }
@@ -83,6 +268,7 @@ impl MatrixStorage {
             MatrixStorage::Identity => 0, // Unknown until applied
             MatrixStorage::Diagonal(d) => d.len(),
             MatrixStorage::Sparse { output_dim, .. } => *output_dim,
+            MatrixStorage::Csr(csr) => csr.rows,
             MatrixStorage::Dense { output_dim, .. } => *output_dim,
             MatrixStorage::Projection { indices, .. } => indices.len(),
         }
@@ -101,6 +287,34 @@ impl MatrixStorage {
     /// Check if this is a projection
     pub fn is_projection(&self) -> bool {
         matches!(self, MatrixStorage::Projection { .. })
+    }
+
+    /// Check if this is a CSR sparse matrix
+    pub fn is_csr(&self) -> bool {
+        matches!(self, MatrixStorage::Csr(_))
+    }
+
+    /// Convert COO sparse format to CSR format for better performance
+    ///
+    /// Returns `None` if the storage is not in Sparse (COO) format.
+    pub fn to_csr(&self) -> Option<CsrMatrix> {
+        match self {
+            MatrixStorage::Sparse {
+                rows,
+                cols,
+                values,
+                output_dim,
+                input_dim,
+            } => Some(CsrMatrix::from_coo_arrays(
+                *output_dim,
+                *input_dim,
+                rows,
+                cols,
+                values,
+            )),
+            MatrixStorage::Csr(csr) => Some(csr.clone()),
+            _ => None,
+        }
     }
 }
 
@@ -181,6 +395,9 @@ impl RestrictionMap {
     }
 
     /// Create a sparse map from COO format
+    ///
+    /// Note: For better performance, consider using `sparse_csr` instead,
+    /// which stores the matrix in CSR format for O(nnz) iteration.
     pub fn sparse(
         rows: Vec<usize>,
         cols: Vec<usize>,
@@ -206,6 +423,77 @@ impl RestrictionMap {
             output_dim,
             input_dim,
         })
+    }
+
+    /// Create a sparse map in CSR (Compressed Sparse Row) format
+    ///
+    /// CSR format provides O(nnz) iteration with excellent cache locality,
+    /// making it significantly faster for sparse matrix-vector multiplication.
+    ///
+    /// # Arguments
+    /// * `rows` - Row indices of non-zero elements
+    /// * `cols` - Column indices of non-zero elements
+    /// * `values` - Values of non-zero elements
+    /// * `output_dim` - Number of output dimensions (rows in the matrix)
+    /// * `input_dim` - Number of input dimensions (columns in the matrix)
+    pub fn sparse_csr(
+        rows: Vec<usize>,
+        cols: Vec<usize>,
+        values: Vec<f32>,
+        output_dim: usize,
+        input_dim: usize,
+    ) -> Result<Self, RestrictionMapError> {
+        if rows.len() != cols.len() || rows.len() != values.len() {
+            return Err(RestrictionMapError::InvalidMatrix(
+                "COO arrays must have same length".to_string(),
+            ));
+        }
+
+        let csr = CsrMatrix::from_coo_arrays(output_dim, input_dim, &rows, &cols, &values);
+
+        Ok(Self {
+            matrix: MatrixStorage::Csr(csr),
+            bias: Vec::new(),
+            output_dim,
+            input_dim,
+        })
+    }
+
+    /// Create a sparse map from a pre-built CSR matrix
+    pub fn from_csr(csr: CsrMatrix) -> Self {
+        let output_dim = csr.rows;
+        let input_dim = csr.cols;
+        Self {
+            matrix: MatrixStorage::Csr(csr),
+            bias: Vec::new(),
+            output_dim,
+            input_dim,
+        }
+    }
+
+    /// Convert this restriction map to use CSR format if it's currently using COO sparse format
+    ///
+    /// Returns `self` unchanged if the matrix is not in COO sparse format.
+    /// This is useful for optimizing existing sparse maps without changing their semantics.
+    pub fn to_csr(self) -> Self {
+        match &self.matrix {
+            MatrixStorage::Sparse {
+                rows,
+                cols,
+                values,
+                output_dim,
+                input_dim,
+            } => {
+                let csr = CsrMatrix::from_coo_arrays(*output_dim, *input_dim, rows, cols, values);
+                Self {
+                    matrix: MatrixStorage::Csr(csr),
+                    bias: self.bias,
+                    output_dim: self.output_dim,
+                    input_dim: self.input_dim,
+                }
+            }
+            _ => self,
+        }
     }
 
     /// Add a bias vector to the map
@@ -299,6 +587,11 @@ impl RestrictionMap {
                 result
             }
 
+            MatrixStorage::Csr(csr) => {
+                // Use optimized CSR matrix-vector multiply
+                csr.matvec(input)
+            }
+
             MatrixStorage::Dense {
                 data,
                 output_dim,
@@ -365,6 +658,11 @@ impl RestrictionMap {
                 for ((&r, &c), &v) in rows.iter().zip(cols.iter()).zip(values.iter()) {
                     output[r] += v * input[c];
                 }
+            }
+
+            MatrixStorage::Csr(csr) => {
+                // Use optimized CSR matrix-vector multiply
+                csr.matvec_into(input, output);
             }
 
             MatrixStorage::Dense {
@@ -576,6 +874,30 @@ impl RestrictionMapBuilder {
         self
     }
 
+    /// Create a sparse map in CSR format
+    pub fn sparse_csr(
+        mut self,
+        rows: Vec<usize>,
+        cols: Vec<usize>,
+        values: Vec<f32>,
+        output_dim: usize,
+        input_dim: usize,
+    ) -> Self {
+        let csr = CsrMatrix::from_coo_arrays(output_dim, input_dim, &rows, &cols, &values);
+        self.matrix = Some(MatrixStorage::Csr(csr));
+        self.input_dim = Some(input_dim);
+        self.output_dim = Some(output_dim);
+        self
+    }
+
+    /// Create a sparse map from a pre-built CSR matrix
+    pub fn csr(mut self, csr: CsrMatrix) -> Self {
+        self.input_dim = Some(csr.cols);
+        self.output_dim = Some(csr.rows);
+        self.matrix = Some(MatrixStorage::Csr(csr));
+        self
+    }
+
     /// Add a bias vector
     pub fn bias(mut self, bias: Vec<f32>) -> Self {
         self.bias = bias;
@@ -709,5 +1031,215 @@ mod tests {
                 val
             );
         }
+    }
+
+    #[test]
+    fn test_csr_matrix_basic() {
+        // Create a simple 2x3 matrix:
+        // [ 1  0  2 ]
+        // [ 0  3  0 ]
+        let csr = CsrMatrix::from_coo(
+            2,
+            3,
+            vec![(0, 0, 1.0), (0, 2, 2.0), (1, 1, 3.0)],
+        );
+
+        assert_eq!(csr.rows, 2);
+        assert_eq!(csr.cols, 3);
+        assert_eq!(csr.nnz(), 3);
+        assert_eq!(csr.row_ptr, vec![0, 2, 3]);
+        assert_eq!(csr.col_indices, vec![0, 2, 1]);
+        assert_eq!(csr.values, vec![1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn test_csr_matvec() {
+        // Create a 2x3 matrix:
+        // [ 1  0  2 ]
+        // [ 0  3  0 ]
+        let csr = CsrMatrix::from_coo(
+            2,
+            3,
+            vec![(0, 0, 1.0), (0, 2, 2.0), (1, 1, 3.0)],
+        );
+
+        let input = vec![1.0, 2.0, 3.0];
+        let output = csr.matvec(&input);
+
+        // output[0] = 1*1 + 0*2 + 2*3 = 7
+        // output[1] = 0*1 + 3*2 + 0*3 = 6
+        assert_eq!(output, vec![7.0, 6.0]);
+    }
+
+    #[test]
+    fn test_csr_matvec_into() {
+        let csr = CsrMatrix::from_coo(
+            2,
+            3,
+            vec![(0, 0, 1.0), (0, 2, 2.0), (1, 1, 3.0)],
+        );
+
+        let input = vec![1.0, 2.0, 3.0];
+        let mut output = vec![0.0; 2];
+        csr.matvec_into(&input, &mut output);
+
+        assert_eq!(output, vec![7.0, 6.0]);
+    }
+
+    #[test]
+    fn test_sparse_csr_map() {
+        // Same matrix as test_sparse_map but using CSR format
+        // Sparse 2x3: only (0,0)=1, (0,2)=2, (1,1)=3
+        let map =
+            RestrictionMap::sparse_csr(vec![0, 0, 1], vec![0, 2, 1], vec![1.0, 2.0, 3.0], 2, 3)
+                .unwrap();
+        let input = vec![1.0, 2.0, 3.0];
+        let output = map.apply(&input);
+        // output[0] = 1*1 + 2*3 = 7
+        // output[1] = 3*2 = 6
+        assert_eq!(output, vec![7.0, 6.0]);
+    }
+
+    #[test]
+    fn test_sparse_to_csr_conversion() {
+        // Create using COO format
+        let map_coo =
+            RestrictionMap::sparse(vec![0, 0, 1], vec![0, 2, 1], vec![1.0, 2.0, 3.0], 2, 3)
+                .unwrap();
+
+        // Convert to CSR
+        let map_csr = map_coo.to_csr();
+
+        // Both should produce the same result
+        let input = vec![1.0, 2.0, 3.0];
+        let output_csr = map_csr.apply(&input);
+
+        assert_eq!(output_csr, vec![7.0, 6.0]);
+
+        // Verify it's actually using CSR storage
+        assert!(map_csr.matrix.is_csr());
+    }
+
+    #[test]
+    fn test_sparse_csr_apply_into() {
+        let map =
+            RestrictionMap::sparse_csr(vec![0, 0, 1], vec![0, 2, 1], vec![1.0, 2.0, 3.0], 2, 3)
+                .unwrap();
+        let input = vec![1.0, 2.0, 3.0];
+        let mut output = vec![0.0; 2];
+        map.apply_into(&input, &mut output);
+        assert_eq!(output, vec![7.0, 6.0]);
+    }
+
+    #[test]
+    fn test_sparse_csr_with_bias() {
+        let map =
+            RestrictionMap::sparse_csr(vec![0, 0, 1], vec![0, 2, 1], vec![1.0, 2.0, 3.0], 2, 3)
+                .unwrap()
+                .with_bias(vec![1.0, 2.0])
+                .unwrap();
+        let input = vec![1.0, 2.0, 3.0];
+        let output = map.apply(&input);
+        // output[0] = 7 + 1 = 8
+        // output[1] = 6 + 2 = 8
+        assert_eq!(output, vec![8.0, 8.0]);
+    }
+
+    #[test]
+    fn test_csr_builder() {
+        let map = RestrictionMapBuilder::new()
+            .sparse_csr(vec![0, 0, 1], vec![0, 2, 1], vec![1.0, 2.0, 3.0], 2, 3)
+            .bias(vec![0.5, 0.5])
+            .build()
+            .unwrap();
+
+        let input = vec![1.0, 2.0, 3.0];
+        let output = map.apply(&input);
+        assert_eq!(output, vec![7.5, 6.5]);
+    }
+
+    #[test]
+    fn test_csr_large_sparse_matrix() {
+        // Create a larger sparse matrix to test SIMD optimizations
+        // 100x100 matrix with 10 non-zeros per row on the diagonal
+        let mut rows = Vec::new();
+        let mut cols = Vec::new();
+        let mut values = Vec::new();
+
+        for i in 0..100 {
+            rows.push(i);
+            cols.push(i);
+            values.push(1.0);
+        }
+
+        let map = RestrictionMap::sparse_csr(rows, cols, values, 100, 100).unwrap();
+        let input: Vec<f32> = (0..100).map(|i| i as f32).collect();
+        let output = map.apply(&input);
+
+        // With identity-like diagonal, output should equal input
+        for (i, (&expected, &actual)) in input.iter().zip(output.iter()).enumerate() {
+            assert!(
+                (expected - actual).abs() < 1e-6,
+                "Index {}: expected {}, got {}",
+                i,
+                expected,
+                actual
+            );
+        }
+    }
+
+    #[test]
+    fn test_csr_matvec_add_into() {
+        let csr = CsrMatrix::from_coo(
+            2,
+            3,
+            vec![(0, 0, 1.0), (0, 2, 2.0), (1, 1, 3.0)],
+        );
+
+        let input = vec![1.0, 2.0, 3.0];
+        let mut output = vec![1.0, 1.0]; // Pre-existing values
+        csr.matvec_add_into(&input, &mut output);
+
+        // output[0] = 1 + 7 = 8
+        // output[1] = 1 + 6 = 7
+        assert_eq!(output, vec![8.0, 7.0]);
+    }
+
+    #[test]
+    fn test_csr_empty_rows() {
+        // Test matrix with some empty rows:
+        // [ 0  0  0 ]
+        // [ 1  0  0 ]
+        // [ 0  0  0 ]
+        // [ 0  2  0 ]
+        let csr = CsrMatrix::from_coo(4, 3, vec![(1, 0, 1.0), (3, 1, 2.0)]);
+
+        assert_eq!(csr.rows, 4);
+        assert_eq!(csr.row_ptr, vec![0, 0, 1, 1, 2]);
+
+        let input = vec![1.0, 2.0, 3.0];
+        let output = csr.matvec(&input);
+
+        assert_eq!(output, vec![0.0, 1.0, 0.0, 4.0]);
+    }
+
+    #[test]
+    fn test_matrix_storage_to_csr() {
+        let storage = MatrixStorage::Sparse {
+            rows: vec![0, 0, 1],
+            cols: vec![0, 2, 1],
+            values: vec![1.0, 2.0, 3.0],
+            output_dim: 2,
+            input_dim: 3,
+        };
+
+        let csr = storage.to_csr().unwrap();
+        assert_eq!(csr.rows, 2);
+        assert_eq!(csr.cols, 3);
+
+        // Test that it produces correct results
+        let input = vec![1.0, 2.0, 3.0];
+        let output = csr.matvec(&input);
+        assert_eq!(output, vec![7.0, 6.0]);
     }
 }
