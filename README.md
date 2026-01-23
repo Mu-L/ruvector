@@ -1091,6 +1091,7 @@ await dag.execute();
 | [@ruvector/economy-wasm](https://www.npmjs.com/package/@ruvector/economy-wasm) | Tokenomics WASM | [![npm](https://img.shields.io/npm/v/@ruvector/economy-wasm.svg)](https://www.npmjs.com/package/@ruvector/economy-wasm) | [![downloads](https://img.shields.io/npm/dt/@ruvector/economy-wasm.svg)](https://www.npmjs.com/package/@ruvector/economy-wasm) |
 | [@ruvector/exotic-wasm](https://www.npmjs.com/package/@ruvector/exotic-wasm) | Exotic features WASM | [![npm](https://img.shields.io/npm/v/@ruvector/exotic-wasm.svg)](https://www.npmjs.com/package/@ruvector/exotic-wasm) | [![downloads](https://img.shields.io/npm/dt/@ruvector/exotic-wasm.svg)](https://www.npmjs.com/package/@ruvector/exotic-wasm) |
 | [@ruvector/nervous-system-wasm](https://www.npmjs.com/package/@ruvector/nervous-system-wasm) | Nervous system WASM | [![npm](https://img.shields.io/npm/v/@ruvector/nervous-system-wasm.svg)](https://www.npmjs.com/package/@ruvector/nervous-system-wasm) | [![downloads](https://img.shields.io/npm/dt/@ruvector/nervous-system-wasm.svg)](https://www.npmjs.com/package/@ruvector/nervous-system-wasm) |
+| [ruvector-attention-wasm](https://www.npmjs.com/package/ruvector-attention-wasm) | WASM attention (Flash, MoE, Hyperbolic, CGT Sheaf) | [![npm](https://img.shields.io/npm/v/ruvector-attention-wasm.svg)](https://www.npmjs.com/package/ruvector-attention-wasm) | [![downloads](https://img.shields.io/npm/dt/ruvector-attention-wasm.svg)](https://www.npmjs.com/package/ruvector-attention-wasm) |
 
 </details>
 
@@ -1226,6 +1227,7 @@ let (value, cut_edges) = mincut.compute();
 | [cognitum-gate-kernel](./crates/cognitum-gate-kernel) | Anytime-valid coherence gate kernel | [![crates.io](https://img.shields.io/crates/v/cognitum-gate-kernel.svg)](https://crates.io/crates/cognitum-gate-kernel) |
 | [cognitum-gate-tilezero](./crates/cognitum-gate-tilezero) | TileZero arbiter for coherence decisions | [![crates.io](https://img.shields.io/crates/v/cognitum-gate-tilezero.svg)](https://crates.io/crates/cognitum-gate-tilezero) |
 | [mcp-gate](./crates/mcp-gate) | MCP server for coherence gate integration | [![crates.io](https://img.shields.io/crates/v/mcp-gate.svg)](https://crates.io/crates/mcp-gate) |
+| [prime-radiant](./crates/prime-radiant) | Universal coherence engine - sheaf Laplacian AI safety & hallucination detection | [![crates.io](https://img.shields.io/crates/v/prime-radiant.svg)](https://crates.io/crates/prime-radiant) |
 
 **ruQu Features:** Real-time quantum coherence assessment, MWPM decoder integration, mincut-gated attention (50% FLOPs reduction).
 
