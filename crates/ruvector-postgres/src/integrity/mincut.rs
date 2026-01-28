@@ -426,7 +426,7 @@ mod tests {
 
     #[test]
     fn test_mincut_two_connected_nodes() {
-        use super::super::contracted_graph::{ContractedEdge, ContractedNode};
+        use super::super::contracted_graph::{ContractedEdge, ContractedNode, EdgeType};
 
         let mut graph = ContractedGraph::new(1);
         graph.add_node(ContractedNode::new(1, NodeType::Partition, 0));
