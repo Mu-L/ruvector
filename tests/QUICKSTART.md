@@ -2,6 +2,8 @@
 
 This guide shows you how to quickly test the RuVector MCP server.
 
+## Usage
+
 ## Option 1: Using the Simple Test Script
 
 The simplest way to test the MCP server:

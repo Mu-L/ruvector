@@ -10,14 +10,29 @@
  *
  * Prerequisites:
  * - Build the MCP server: cargo build --release -p ruvector-cli --bin ruvector-mcp
+ * - Install MCP SDK: npm install @modelcontextprotocol/sdk
  * - Or run via npm: npm run mcp
  *
  * Usage:
  *   node tests/mcp-demo.js
  */
 
-const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
-const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');
+// Try to load MCP SDK, provide helpful error if not found
+let Client, StdioClientTransport;
+try {
+  const clientModule = require('@modelcontextprotocol/sdk/client/index.js');
+  const transportModule = require('@modelcontextprotocol/sdk/client/stdio.js');
+  Client = clientModule.Client;
+  StdioClientTransport = transportModule.StdioClientTransport;
+} catch (error) {
+  console.error('\n❌ Error: @modelcontextprotocol/sdk not found!\n');
+  console.error('Please install it first:');
+  console.error('  npm install @modelcontextprotocol/sdk\n');
+  console.error('Or use the simple test script instead:');
+  console.error('  node tests/mcp-simple-test.js\n');
+  process.exit(1);
+}
+
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
