@@ -59,47 +59,46 @@ pub fn version() -> String {
 
 // ---------------------------------------------------------------------------
 // Helpers (not exported)
+//
+// Internal conversion functions return Result<T, String> so they can be tested
+// in native (non-WASM) mode. A thin `to_js_err` wrapper converts to JsValue
+// at the WASM boundary.
 // ---------------------------------------------------------------------------
 
-fn quant_tier_from_u8(v: u8) -> Result<QuantTier, JsValue> {
+fn to_js_err(msg: String) -> JsValue {
+    JsValue::from_str(&msg)
+}
+
+fn quant_tier_from_u8(v: u8) -> Result<QuantTier, String> {
     match v {
         0 => Ok(QuantTier::Hot8),
         1 => Ok(QuantTier::Warm7),
         2 => Ok(QuantTier::Warm5),
         3 => Ok(QuantTier::Cold3),
-        _ => Err(JsValue::from_str(&format!(
-            "invalid QuantTier: {} (expected 0-3)",
-            v
-        ))),
+        _ => Err(format!("invalid QuantTier: {} (expected 0-3)", v)),
     }
 }
 
-fn opacity_mode_from_u8(v: u8) -> Result<OpacityMode, JsValue> {
+fn opacity_mode_from_u8(v: u8) -> Result<OpacityMode, String> {
     match v {
         0 => Ok(OpacityMode::AlphaBlend),
         1 => Ok(OpacityMode::Additive),
         2 => Ok(OpacityMode::Opaque),
-        _ => Err(JsValue::from_str(&format!(
-            "invalid OpacityMode: {} (expected 0-2)",
-            v
-        ))),
+        _ => Err(format!("invalid OpacityMode: {} (expected 0-2)", v)),
     }
 }
 
-fn permission_level_from_u8(v: u8) -> Result<PermissionLevel, JsValue> {
+fn permission_level_from_u8(v: u8) -> Result<PermissionLevel, String> {
     match v {
         0 => Ok(PermissionLevel::ReadOnly),
         1 => Ok(PermissionLevel::Standard),
         2 => Ok(PermissionLevel::Elevated),
         3 => Ok(PermissionLevel::Admin),
-        _ => Err(JsValue::from_str(&format!(
-            "invalid PermissionLevel: {} (expected 0-3)",
-            v
-        ))),
+        _ => Err(format!("invalid PermissionLevel: {} (expected 0-3)", v)),
     }
 }
 
-fn edge_type_from_str(s: &str) -> Result<EdgeType, JsValue> {
+fn edge_type_from_str(s: &str) -> Result<EdgeType, String> {
     match s.to_ascii_lowercase().as_str() {
         "adjacency" | "spatial" => Ok(EdgeType::Adjacency),
         "containment" => Ok(EdgeType::Containment),
@@ -108,10 +107,10 @@ fn edge_type_from_str(s: &str) -> Result<EdgeType, JsValue> {
         "same_identity" | "sameidentity" | "identity" | "semantic" => {
             Ok(EdgeType::SameIdentity)
         }
-        _ => Err(JsValue::from_str(&format!(
+        _ => Err(format!(
             "unknown edge type: '{}' (expected adjacency|containment|continuity|causality|same_identity)",
             s
-        ))),
+        )),
     }
 }
 
@@ -124,9 +123,9 @@ fn decision_to_str(d: CoherenceDecision) -> &'static str {
     }
 }
 
-fn parse_embedding_json(json: &str) -> Result<Vec<f32>, JsValue> {
+fn parse_embedding_json(json: &str) -> Result<Vec<f32>, String> {
     serde_json::from_str::<Vec<f32>>(json)
-        .map_err(|e| JsValue::from_str(&format!("failed to parse embedding JSON: {}", e)))
+        .map_err(|e| format!("failed to parse embedding JSON: {}", e))
 }
 
 // ---------------------------------------------------------------------------
@@ -269,7 +268,7 @@ impl WasmDrawList {
         block_ref: u32,
         quant_tier: u8,
     ) -> Result<(), JsValue> {
-        let tier = quant_tier_from_u8(quant_tier)?;
+        let tier = quant_tier_from_u8(quant_tier).map_err(to_js_err)?;
         self.inner.bind_tile(tile_id, block_ref, tier);
         Ok(())
     }
@@ -290,7 +289,7 @@ impl WasmDrawList {
         sort_key: f32,
         opacity_mode: u8,
     ) -> Result<(), JsValue> {
-        let mode = opacity_mode_from_u8(opacity_mode)?;
+        let mode = opacity_mode_from_u8(opacity_mode).map_err(to_js_err)?;
         self.inner.draw_block(block_ref, sort_key, mode);
         Ok(())
     }
@@ -377,7 +376,7 @@ impl WasmCoherenceGate {
         budget_pressure: f32,
         permission_level: u8,
     ) -> Result<String, JsValue> {
-        let perm = permission_level_from_u8(permission_level)?;
+        let perm = permission_level_from_u8(permission_level).map_err(to_js_err)?;
         let input = CoherenceInput {
             tile_disagreement,
             entity_continuity,
@@ -429,7 +428,7 @@ impl WasmEntityGraph {
         let embedding = if embedding_json.is_empty() {
             vec![]
         } else {
-            parse_embedding_json(embedding_json)?
+            parse_embedding_json(embedding_json).map_err(to_js_err)?
         };
 
         let entity = Entity {
@@ -461,7 +460,7 @@ impl WasmEntityGraph {
         let embedding = if embedding_json.is_empty() {
             vec![]
         } else {
-            parse_embedding_json(embedding_json)?
+            parse_embedding_json(embedding_json).map_err(to_js_err)?
         };
 
         let entity = Entity {
@@ -491,7 +490,7 @@ impl WasmEntityGraph {
         edge_type_str: &str,
         weight: f32,
     ) -> Result<(), JsValue> {
-        let edge_type = edge_type_from_str(edge_type_str)?;
+        let edge_type = edge_type_from_str(edge_type_str).map_err(to_js_err)?;
         self.inner.add_edge(Edge {
             source,
             target,
@@ -820,9 +819,12 @@ mod tests {
         let mut g = WasmGaussian4D::new(0.0, 0.0, 0.0, 1);
         g.set_velocity(1.0, 2.0, 3.0);
         g.set_time_range(0.0, 10.0);
+        // Test the underlying position_at logic directly via the inner type.
         // t_mid = 5.0, at t=7.0: dt=2.0 -> pos = [2.0, 4.0, 6.0]
-        let pos = g.position_at(7.0);
-        assert_eq!(pos.length(), 3);
+        let pos = g.inner.position_at(7.0);
+        assert!((pos[0] - 2.0).abs() < 1e-6);
+        assert!((pos[1] - 4.0).abs() < 1e-6);
+        assert!((pos[2] - 6.0).abs() < 1e-6);
     }
 
     #[test]
@@ -859,8 +861,11 @@ mod tests {
         assert_eq!(dl.command_count(), 3);
         let checksum = dl.finalize();
         assert_ne!(checksum, 0);
-        let bytes = dl.to_bytes();
-        assert!(bytes.length() > 0);
+        // Verify the inner draw list serializes to a non-empty byte buffer.
+        // (to_bytes() returns js_sys::Uint8Array which requires a JS runtime,
+        // so we test the inner type directly for native tests.)
+        let bytes = dl.inner.to_bytes();
+        assert!(!bytes.is_empty());
     }
 
     #[test]
