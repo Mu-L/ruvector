@@ -48,6 +48,7 @@ pub mod verification;
 pub mod planner;
 pub mod clifford_t;
 pub mod decomposition;
+pub mod pipeline;
 
 // -- QEC control plane --
 pub mod decoder;

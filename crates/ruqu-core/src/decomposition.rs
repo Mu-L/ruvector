@@ -288,7 +288,202 @@ pub fn temporal_decomposition(circuit: &QuantumCircuit) -> Vec<QuantumCircuit> {
 }
 
 // ---------------------------------------------------------------------------
-// Spatial decomposition
+// Stoer-Wagner minimum cut
+// ---------------------------------------------------------------------------
+
+/// Result of a Stoer-Wagner minimum cut computation.
+#[derive(Debug, Clone)]
+pub struct MinCutResult {
+    /// The minimum cut value (sum of edge weights crossing the cut).
+    pub cut_value: usize,
+    /// One side of the partition (qubit indices).
+    pub partition_a: Vec<u32>,
+    /// Other side of the partition.
+    pub partition_b: Vec<u32>,
+}
+
+/// Compute the minimum cut of an interaction graph using Stoer-Wagner.
+///
+/// Time complexity: O(V * E + V^2 * log V) which is O(V^3) for dense graphs.
+/// This is optimal for finding a global minimum cut without specifying s and t.
+///
+/// Returns `None` if the graph has 0 or 1 nodes.
+pub fn stoer_wagner_mincut(graph: &InteractionGraph) -> Option<MinCutResult> {
+    let n = graph.num_qubits as usize;
+    if n <= 1 {
+        return None;
+    }
+
+    // Build a weighted adjacency matrix.
+    let mut adj = vec![vec![0usize; n]; n];
+    for &(a, b, w) in &graph.edges {
+        let (a, b) = (a as usize, b as usize);
+        adj[a][b] += w;
+        adj[b][a] += w;
+    }
+
+    // Track which original vertices are merged into each super-vertex.
+    let mut merged: Vec<Vec<u32>> = (0..n).map(|i| vec![i as u32]).collect();
+    let mut active: Vec<bool> = vec![true; n];
+
+    let mut best_cut_value = usize::MAX;
+    let mut best_partition: Vec<u32> = Vec::new();
+
+    for _ in 0..(n - 1) {
+        // Stoer-Wagner phase: find the most tightly connected vertex ordering.
+        let active_nodes: Vec<usize> = (0..n).filter(|&i| active[i]).collect();
+        if active_nodes.len() < 2 {
+            break;
+        }
+
+        let mut in_a = vec![false; n];
+        let mut weight_to_a = vec![0usize; n];
+
+        // Start with the first active node.
+        let start = active_nodes[0];
+        in_a[start] = true;
+
+        // Update weights for neighbors of start.
+        for &node in &active_nodes {
+            if node != start {
+                weight_to_a[node] = adj[start][node];
+            }
+        }
+
+        let mut prev = start;
+        let mut last = start;
+
+        for _ in 1..active_nodes.len() {
+            // Find the most tightly connected vertex not yet in A.
+            let next = active_nodes
+                .iter()
+                .filter(|&&v| !in_a[v])
+                .max_by_key(|&&v| weight_to_a[v])
+                .copied()
+                .unwrap();
+
+            prev = last;
+            last = next;
+            in_a[next] = true;
+
+            // Update weights.
+            for &node in &active_nodes {
+                if !in_a[node] {
+                    weight_to_a[node] += adj[next][node];
+                }
+            }
+        }
+
+        // The cut-of-the-phase is the weight of last vertex added.
+        let cut_of_phase = weight_to_a[last];
+
+        if cut_of_phase < best_cut_value {
+            best_cut_value = cut_of_phase;
+            best_partition = merged[last].clone();
+        }
+
+        // Merge last into prev.
+        for &node in &active_nodes {
+            if node != last && node != prev {
+                adj[prev][node] += adj[last][node];
+                adj[node][prev] += adj[node][last];
+            }
+        }
+        active[last] = false;
+        let last_merged = std::mem::take(&mut merged[last]);
+        merged[prev].extend(last_merged);
+    }
+
+    let partition_a_set: HashSet<u32> = best_partition.iter().copied().collect();
+    let mut partition_a: Vec<u32> = best_partition;
+    partition_a.sort_unstable();
+    let mut partition_b: Vec<u32> = (0..n as u32)
+        .filter(|q| !partition_a_set.contains(q))
+        .collect();
+    partition_b.sort_unstable();
+
+    Some(MinCutResult {
+        cut_value: best_cut_value,
+        partition_a,
+        partition_b,
+    })
+}
+
+/// Spatial decomposition using Stoer-Wagner minimum cut.
+///
+/// Recursively bisects the circuit along minimum cuts until all segments
+/// have at most `max_qubits` qubits. Produces better partitions than the
+/// greedy approach by minimizing the number of cross-partition entangling
+/// gates.
+pub fn spatial_decomposition_mincut(
+    circuit: &QuantumCircuit,
+    graph: &InteractionGraph,
+    max_qubits: u32,
+) -> Vec<(Vec<u32>, QuantumCircuit)> {
+    let n = graph.num_qubits;
+    if n == 0 || max_qubits == 0 {
+        return Vec::new();
+    }
+    if n <= max_qubits {
+        let all_qubits: Vec<u32> = (0..n).collect();
+        return vec![(all_qubits, circuit.clone())];
+    }
+
+    // Recursively bisect using Stoer-Wagner.
+    let mut result = Vec::new();
+    recursive_mincut_partition(circuit, graph, max_qubits, &mut result);
+    result
+}
+
+/// Recursively partition using min-cut bisection.
+fn recursive_mincut_partition(
+    circuit: &QuantumCircuit,
+    graph: &InteractionGraph,
+    max_qubits: u32,
+    result: &mut Vec<(Vec<u32>, QuantumCircuit)>,
+) {
+    let n = graph.num_qubits;
+    if n <= max_qubits {
+        let all_qubits: Vec<u32> = (0..n).collect();
+        result.push((all_qubits, circuit.clone()));
+        return;
+    }
+
+    match stoer_wagner_mincut(graph) {
+        Some(cut) => {
+            // Extract subcircuits for each partition.
+            let set_a: HashSet<u32> = cut.partition_a.iter().copied().collect();
+            let set_b: HashSet<u32> = cut.partition_b.iter().copied().collect();
+
+            let circ_a = extract_component_circuit(circuit, &set_a);
+            let circ_b = extract_component_circuit(circuit, &set_b);
+
+            let graph_a = build_interaction_graph(&circ_a);
+            let graph_b = build_interaction_graph(&circ_b);
+
+            // Recurse on each half.
+            if cut.partition_a.len() as u32 > max_qubits {
+                recursive_mincut_partition(&circ_a, &graph_a, max_qubits, result);
+            } else {
+                result.push((cut.partition_a, circ_a));
+            }
+
+            if cut.partition_b.len() as u32 > max_qubits {
+                recursive_mincut_partition(&circ_b, &graph_b, max_qubits, result);
+            } else {
+                result.push((cut.partition_b, circ_b));
+            }
+        }
+        None => {
+            // Cannot partition further.
+            let all_qubits: Vec<u32> = (0..n).collect();
+            result.push((all_qubits, circuit.clone()));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Spatial decomposition (greedy heuristic)
 // ---------------------------------------------------------------------------
 
 /// Partition qubits into groups of at most `max_qubits` using a greedy
@@ -504,19 +699,20 @@ fn remap_gate(gate: &Gate, remap: &HashMap<u32, u32>) -> Gate {
 /// Decision rules:
 /// 1. If all gates are Clifford (or non-unitary) -> `Stabilizer`
 /// 2. If `num_qubits <= 25` -> `StateVector`
-/// 3. If any non-Clifford gate exists and `num_qubits > 25` -> `TensorNetwork`
-/// 4. Otherwise -> `StateVector`
+/// 3. If `num_qubits > 25` and T-count <= 40 -> `CliffordT`
+/// 4. If `num_qubits > 25` and T-count > 40 -> `TensorNetwork`
+/// 5. Otherwise -> `StateVector`
 pub fn classify_segment(segment: &QuantumCircuit) -> BackendType {
     let mut has_non_clifford = false;
+    let mut t_count: usize = 0;
 
     for gate in segment.gates() {
         if gate.is_non_unitary() {
-            // Measure, Reset, Barrier -- these are supported by all backends.
             continue;
         }
         if !StabilizerState::is_clifford_gate(gate) {
             has_non_clifford = true;
-            break;
+            t_count += 1;
         }
     }
 
@@ -528,7 +724,13 @@ pub fn classify_segment(segment: &QuantumCircuit) -> BackendType {
         return BackendType::StateVector;
     }
 
-    // Non-Clifford with > 25 qubits -> TensorNetwork
+    // Moderate T-count on large circuits -> CliffordT (Bravyi-Gosset).
+    // 2^t stabilizer terms; practical up to ~40 T-gates.
+    if t_count <= 40 {
+        return BackendType::CliffordT;
+    }
+
+    // High T-count with > 25 qubits -> TensorNetwork
     BackendType::TensorNetwork
 }
 
@@ -586,6 +788,24 @@ pub fn estimate_segment_cost(segment: &QuantumCircuit, backend: BackendType) -> 
             // FLOPs: each gate requires SVD truncation ~ O(chi^3).
             let flops_per_gate = chi * chi * chi;
             let estimated_flops = gate_count.saturating_mul(flops_per_gate);
+            SegmentCost {
+                memory_bytes,
+                estimated_flops,
+                qubit_count: n,
+            }
+        }
+        BackendType::CliffordT => {
+            // Memory: 2^t stabiliser tableaux, each n^2 / 4 bytes.
+            let analysis = crate::backend::analyze_circuit(segment);
+            let t = analysis.non_clifford_gates as u32;
+            let terms: u64 = 1u64.checked_shl(t).unwrap_or(u64::MAX);
+            let tableau_bytes = (n as u64).saturating_mul(n as u64) / 4;
+            let memory_bytes = terms.saturating_mul(tableau_bytes).max(1);
+            // FLOPs: each of 2^t terms processes every gate at O(n^2).
+            let flops_per_gate = 4 * (n as u64) * (n as u64);
+            let estimated_flops = terms
+                .saturating_mul(gate_count)
+                .saturating_mul(flops_per_gate);
             SegmentCost {
                 memory_bytes,
                 estimated_flops,
@@ -684,6 +904,130 @@ pub fn stitch_results(
     }
 
     result
+}
+
+// ---------------------------------------------------------------------------
+// Fidelity-aware stitching
+// ---------------------------------------------------------------------------
+
+/// Fidelity estimate for a partition boundary.
+///
+/// Models the information loss when a quantum circuit is split across
+/// a partition boundary where entangling gates were cut. Each cut
+/// entangling gate reduces the fidelity by a factor related to the
+/// Schmidt decomposition rank at the cut.
+#[derive(Debug, Clone)]
+pub struct StitchFidelity {
+    /// Overall fidelity estimate (product of per-cut fidelities).
+    pub fidelity: f64,
+    /// Number of entangling gates that were cut.
+    pub cut_gates: usize,
+    /// Per-cut fidelity values.
+    pub per_cut_fidelity: Vec<f64>,
+}
+
+/// Stitch results with fidelity estimation.
+///
+/// Like [`stitch_results`], but also estimates the fidelity loss from
+/// partitioning. Each entangling gate that crosses a partition boundary
+/// contributes a fidelity penalty:
+///
+/// ```text
+/// F_cut = 1 / sqrt(2^k)
+/// ```
+///
+/// where k is the number of entangling gates crossing that particular
+/// boundary. This is a conservative upper bound derived from the fact
+/// that each maximally entangling gate can create at most 1 ebit of
+/// entanglement, and cutting it loses at most 1 bit of mutual information.
+///
+/// # Arguments
+///
+/// * `partitions` - Flat list of (bitstring, probability) pairs from all segments.
+/// * `partition_info` - The `CircuitPartition` used to understand cut structure.
+/// * `original_circuit` - The original (undecomposed) circuit for cut analysis.
+pub fn stitch_with_fidelity(
+    partitions: &[(Vec<bool>, f64)],
+    partition_info: &CircuitPartition,
+    original_circuit: &QuantumCircuit,
+) -> (HashMap<Vec<bool>, f64>, StitchFidelity) {
+    // Get the basic stitched distribution.
+    let distribution = stitch_results(partitions);
+
+    // Compute fidelity from the partition structure.
+    let fidelity = estimate_stitch_fidelity(partition_info, original_circuit);
+
+    (distribution, fidelity)
+}
+
+/// Estimate fidelity loss from circuit partitioning.
+///
+/// Analyzes the original circuit to count how many entangling gates
+/// cross each partition boundary.
+fn estimate_stitch_fidelity(
+    partition_info: &CircuitPartition,
+    original_circuit: &QuantumCircuit,
+) -> StitchFidelity {
+    if partition_info.segments.len() <= 1 {
+        return StitchFidelity {
+            fidelity: 1.0,
+            cut_gates: 0,
+            per_cut_fidelity: Vec::new(),
+        };
+    }
+
+    // Build a map: original qubit -> segment index.
+    let mut qubit_to_segment: HashMap<u32, usize> = HashMap::new();
+    for (seg_idx, segment) in partition_info.segments.iter().enumerate() {
+        let (lo, hi) = segment.qubit_range;
+        for q in lo..=hi {
+            qubit_to_segment.entry(q).or_insert(seg_idx);
+        }
+    }
+
+    // Count entangling gates that cross segment boundaries.
+    // Group by boundary pair (seg_a, seg_b) to compute per-boundary fidelity.
+    let mut boundary_cuts: HashMap<(usize, usize), usize> = HashMap::new();
+    let mut total_cut_gates = 0usize;
+
+    for gate in original_circuit.gates() {
+        let qubits = gate.qubits();
+        if qubits.len() != 2 {
+            continue;
+        }
+        let seg_a = qubit_to_segment.get(&qubits[0]).copied();
+        let seg_b = qubit_to_segment.get(&qubits[1]).copied();
+
+        if let (Some(a), Some(b)) = (seg_a, seg_b) {
+            if a != b {
+                let key = if a < b { (a, b) } else { (b, a) };
+                *boundary_cuts.entry(key).or_insert(0) += 1;
+                total_cut_gates += 1;
+            }
+        }
+    }
+
+    // Compute per-boundary fidelity: F = 1/sqrt(2^k) where k is cut gate count.
+    // This is conservative -- assumes each cut gate creates maximal entanglement.
+    let per_cut_fidelity: Vec<f64> = boundary_cuts
+        .values()
+        .map(|&k| {
+            if k == 0 {
+                1.0
+            } else {
+                // F = 2^(-k/2)
+                2.0_f64.powf(-(k as f64) / 2.0)
+            }
+        })
+        .collect();
+
+    let overall_fidelity = per_cut_fidelity.iter().product::<f64>();
+
+    StitchFidelity {
+        fidelity: overall_fidelity,
+        cut_gates: total_cut_gates,
+        per_cut_fidelity,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1258,8 +1602,8 @@ mod tests {
     }
 
     #[test]
-    fn classify_large_non_clifford_as_tensor_network() {
-        // Build a circuit with 30 qubits and a non-Clifford gate.
+    fn classify_large_moderate_t_as_clifford_t() {
+        // 30 qubits with 1 T-gate -> CliffordT (moderate T-count, large circuit).
         let mut circ = QuantumCircuit::new(30);
         circ.h(0);
         circ.t(1); // non-Clifford
@@ -1270,8 +1614,27 @@ mod tests {
         let backend = classify_segment(&circ);
         assert_eq!(
             backend,
+            BackendType::CliffordT,
+            "moderate T-count on > 25 qubits should use CliffordT"
+        );
+    }
+
+    #[test]
+    fn classify_large_high_t_as_tensor_network() {
+        // 30 qubits with 50 T-gates -> TensorNetwork (too many for CliffordT).
+        let mut circ = QuantumCircuit::new(30);
+        for q in 0..29 {
+            circ.cnot(q, q + 1);
+        }
+        for _ in 0..50 {
+            circ.rx(0, 1.0); // non-Clifford
+        }
+
+        let backend = classify_segment(&circ);
+        assert_eq!(
+            backend,
             BackendType::TensorNetwork,
-            "non-Clifford circuit with > 25 qubits should use TensorNetwork"
+            "high T-count on > 25 qubits should use TensorNetwork"
         );
     }
 
@@ -1405,5 +1768,137 @@ mod tests {
             BackendType::Stabilizer,
             "empty circuit has no non-Clifford gates"
         );
+    }
+
+    // ----- Stoer-Wagner min-cut tests -----
+
+    #[test]
+    fn test_stoer_wagner_mincut_linear() {
+        // Linear chain: 0-1-2-3-4
+        // Min cut should be 1 (cutting any single edge).
+        let mut circ = QuantumCircuit::new(5);
+        circ.cnot(0, 1).cnot(1, 2).cnot(2, 3).cnot(3, 4);
+        let graph = build_interaction_graph(&circ);
+        let cut = stoer_wagner_mincut(&graph).unwrap();
+        assert_eq!(cut.cut_value, 1);
+        assert!(!cut.partition_a.is_empty());
+        assert!(!cut.partition_b.is_empty());
+    }
+
+    #[test]
+    fn test_stoer_wagner_mincut_triangle() {
+        // Triangle: 0-1, 1-2, 0-2 (each with weight 1).
+        // Min cut = 2 (cutting any vertex out cuts 2 edges).
+        let mut circ = QuantumCircuit::new(3);
+        circ.cnot(0, 1).cnot(1, 2).cnot(0, 2);
+        let graph = build_interaction_graph(&circ);
+        let cut = stoer_wagner_mincut(&graph).unwrap();
+        assert_eq!(cut.cut_value, 2);
+    }
+
+    #[test]
+    fn test_stoer_wagner_mincut_barbell() {
+        // Barbell: clique(0,1,2) - bridge(2,3) - clique(3,4,5)
+        // Min cut should be 1 (cutting the bridge).
+        let mut circ = QuantumCircuit::new(6);
+        // Left clique.
+        circ.cnot(0, 1).cnot(1, 2).cnot(0, 2);
+        // Bridge.
+        circ.cnot(2, 3);
+        // Right clique.
+        circ.cnot(3, 4).cnot(4, 5).cnot(3, 5);
+        let graph = build_interaction_graph(&circ);
+        let cut = stoer_wagner_mincut(&graph).unwrap();
+        assert_eq!(cut.cut_value, 1);
+    }
+
+    #[test]
+    fn test_spatial_decomposition_mincut() {
+        // 6-qubit barbell, max 3 qubits per segment.
+        let mut circ = QuantumCircuit::new(6);
+        circ.cnot(0, 1).cnot(1, 2).cnot(0, 2);
+        circ.cnot(2, 3);
+        circ.cnot(3, 4).cnot(4, 5).cnot(3, 5);
+        let graph = build_interaction_graph(&circ);
+        let parts = spatial_decomposition_mincut(&circ, &graph, 3);
+        assert!(parts.len() >= 2, "Should partition into at least 2 groups");
+        for (qubits, _sub_circ) in &parts {
+            assert!(qubits.len() as u32 <= 3, "Each group should have at most 3 qubits");
+        }
+    }
+
+    // ----- Fidelity-aware stitching tests -----
+
+    #[test]
+    fn test_stitch_with_fidelity_single_segment() {
+        let circ = QuantumCircuit::new(2);
+        let partition = CircuitPartition {
+            segments: vec![CircuitSegment {
+                circuit: circ.clone(),
+                backend: BackendType::Stabilizer,
+                qubit_range: (0, 1),
+                gate_range: (0, 0),
+                estimated_cost: SegmentCost {
+                    memory_bytes: 0,
+                    estimated_flops: 0,
+                    qubit_count: 2,
+                },
+            }],
+            total_qubits: 2,
+            strategy: DecompositionStrategy::None,
+        };
+        let partitions = vec![(vec![false, false], 1.0)];
+        let (dist, fidelity) = stitch_with_fidelity(&partitions, &partition, &circ);
+        assert_eq!(fidelity.fidelity, 1.0);
+        assert_eq!(fidelity.cut_gates, 0);
+        assert!(!dist.is_empty());
+    }
+
+    #[test]
+    fn test_stitch_with_fidelity_cut_circuit() {
+        // Circuit with a CNOT crossing a partition boundary.
+        let mut circ = QuantumCircuit::new(4);
+        circ.h(0).cnot(0, 1); // Bell pair 0-1
+        circ.h(2).cnot(2, 3); // Bell pair 2-3
+        circ.cnot(1, 2);       // Cross-partition gate
+
+        let partition = CircuitPartition {
+            segments: vec![
+                CircuitSegment {
+                    circuit: {
+                        let mut c = QuantumCircuit::new(2);
+                        c.h(0).cnot(0, 1);
+                        c
+                    },
+                    backend: BackendType::Stabilizer,
+                    qubit_range: (0, 1),
+                    gate_range: (0, 2),
+                    estimated_cost: SegmentCost { memory_bytes: 0, estimated_flops: 0, qubit_count: 2 },
+                },
+                CircuitSegment {
+                    circuit: {
+                        let mut c = QuantumCircuit::new(2);
+                        c.h(0).cnot(0, 1);
+                        c
+                    },
+                    backend: BackendType::Stabilizer,
+                    qubit_range: (2, 3),
+                    gate_range: (2, 4),
+                    estimated_cost: SegmentCost { memory_bytes: 0, estimated_flops: 0, qubit_count: 2 },
+                },
+            ],
+            total_qubits: 4,
+            strategy: DecompositionStrategy::Spatial,
+        };
+
+        let partitions = vec![
+            (vec![false, false], 0.5),
+            (vec![true, true], 0.5),
+            (vec![false, false], 0.5),
+            (vec![true, true], 0.5),
+        ];
+        let (_dist, fidelity) = stitch_with_fidelity(&partitions, &partition, &circ);
+        assert!(fidelity.fidelity < 1.0, "Cut circuit should have fidelity < 1.0");
+        assert!(fidelity.cut_gates >= 1, "Should detect at least 1 cut gate");
     }
 }

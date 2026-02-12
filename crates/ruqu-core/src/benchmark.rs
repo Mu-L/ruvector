@@ -99,6 +99,14 @@ fn predicted_runtime_ns(circuit: &QuantumCircuit, backend: BackendType) -> u64 {
             let ns = (n as f64) * chi * chi * chi * (gates as f64) * 2.0;
             ns as u64
         }
+        BackendType::CliffordT => {
+            // 2^t stabiliser terms, each O(n^2) per gate.
+            let t = analysis.non_clifford_gates as u32;
+            let terms = 1u64.checked_shl(t).unwrap_or(u64::MAX);
+            let flops_per_gate = 4 * (n as u64) * (n as u64);
+            let ns = terms as f64 * flops_per_gate as f64 * gates as f64 * 0.1;
+            ns as u64
+        }
         BackendType::Auto => {
             let plan = plan_execution(circuit, &PlannerConfig::default());
             predicted_runtime_ns(circuit, plan.backend)

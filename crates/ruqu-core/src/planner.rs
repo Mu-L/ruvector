@@ -177,6 +177,12 @@ const DEFAULT_MAX_BOND_DIM: u32 = 256;
 /// Maximum bond dimension the simulator can practically handle.
 const ABSOLUTE_MAX_BOND_DIM: u32 = 4096;
 
+/// Nanoseconds per Clifford+T gate application (per stabilizer term).
+const CT_NS_PER_GATE: f64 = 0.15;
+
+/// Maximum T-count where Clifford+T is practical (2^40 terms is too many).
+const CT_MAX_T_COUNT: usize = 40;
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -228,6 +234,13 @@ pub fn plan_execution(circuit: &QuantumCircuit, config: &PlannerConfig) -> Execu
     let tn_viable = tn_memory <= config.available_memory_bytes;
     let tn_runtime = predict_runtime_tensor_network(num_qubits, total_gates, chi);
 
+    // Evaluate CliffordT backend.
+    let t_count = analysis.non_clifford_gates;
+    let ct_viable = t_count > 0 && t_count <= CT_MAX_T_COUNT && num_qubits > 32;
+    let ct_terms = if ct_viable { 1u64.checked_shl(t_count as u32).unwrap_or(u64::MAX) } else { u64::MAX };
+    let ct_memory = predict_memory_clifford_t(num_qubits, ct_terms);
+    let ct_runtime = predict_runtime_clifford_t(num_qubits, total_gates, ct_terms);
+
     // --- Backend selection ---
 
     let (backend, predicted_memory, predicted_runtime, confidence, explanation) =
@@ -245,6 +258,10 @@ pub fn plan_execution(circuit: &QuantumCircuit, config: &PlannerConfig) -> Execu
             tn_memory,
             tn_runtime,
             chi,
+            ct_viable,
+            ct_memory,
+            ct_runtime,
+            ct_terms,
         );
 
     // --- Verification policy ---
@@ -426,6 +443,23 @@ fn predict_runtime_tensor_network(num_qubits: u32, total_gates: usize, chi: u32)
     ns / 1_000_000.0
 }
 
+/// Predict memory for Clifford+T: terms * n^2 / 4 bytes.
+fn predict_memory_clifford_t(num_qubits: u32, terms: u64) -> u64 {
+    let n = num_qubits as u64;
+    // Each stabilizer term needs a tableau of ~n^2/4 bytes + 16 bytes for the coefficient.
+    let per_term = n.saturating_mul(n) / 4 + 16;
+    terms.saturating_mul(per_term)
+}
+
+/// Predict runtime for Clifford+T in milliseconds.
+///
+/// terms * n^2 * gates * 0.15ns.
+fn predict_runtime_clifford_t(num_qubits: u32, total_gates: usize, terms: u64) -> f64 {
+    let n = num_qubits as f64;
+    let ns = terms as f64 * n * n * total_gates as f64 * CT_NS_PER_GATE;
+    ns / 1_000_000.0
+}
+
 // ---------------------------------------------------------------------------
 // Backend selection logic
 // ---------------------------------------------------------------------------
@@ -452,6 +486,10 @@ fn select_optimal_backend(
     tn_memory: u64,
     tn_runtime: f64,
     chi: u32,
+    ct_viable: bool,
+    ct_memory: u64,
+    ct_runtime: f64,
+    ct_terms: u64,
 ) -> (BackendType, u64, f64, f64, String) {
     let n = analysis.num_qubits;
 
@@ -486,6 +524,21 @@ fn select_optimal_backend(
                 analysis.clifford_fraction * 100.0,
                 analysis.non_clifford_gates,
                 n
+            ),
+        );
+    }
+
+    // Rule 2b: Moderate T-count on large circuits -> CliffordT.
+    if ct_viable && ct_memory <= config.available_memory_bytes {
+        return (
+            BackendType::CliffordT,
+            ct_memory,
+            ct_runtime,
+            0.90,
+            format!(
+                "{} qubits with {} T-gates: Clifford+T decomposition with {} stabilizer terms. \
+                 Predicted {:.2} ms, {} bytes.",
+                n, analysis.non_clifford_gates, ct_terms, ct_runtime, ct_memory
             ),
         );
     }
@@ -818,15 +871,17 @@ mod tests {
 
     #[test]
     fn test_large_mps_plan() {
-        // A large circuit with nearest-neighbor connectivity and non-Clifford
-        // gates should route to TensorNetwork with an entanglement budget.
+        // A large circuit with nearest-neighbor connectivity and many
+        // non-Clifford gates (exceeding CT_MAX_T_COUNT) should route to
+        // TensorNetwork with an entanglement budget.
         let mut circ = QuantumCircuit::new(64);
         // Build a nearest-neighbor circuit with non-Clifford gates.
         for q in 0..63 {
             circ.cnot(q, q + 1);
         }
-        for q in 0..20 {
-            circ.t(q);
+        // Use 50 T-gates to exceed CT_MAX_T_COUNT (40), forcing TensorNetwork.
+        for q in 0..50 {
+            circ.t(q % 64);
         }
 
         let config = PlannerConfig {
@@ -1389,5 +1444,34 @@ mod tests {
             confidence: 0.5,
             explanation: String::new(),
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // CliffordT routing test
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_clifford_t_routing() {
+        // A large circuit with moderate T-count should route to CliffordT.
+        let mut circ = QuantumCircuit::new(50);
+        for q in 0..50 {
+            circ.h(q);
+        }
+        for q in 0..49 {
+            circ.cnot(q, q + 1);
+        }
+        // Add 15 T-gates (moderate count, 2^15 = 32768 terms).
+        for q in 0..15 {
+            circ.t(q);
+        }
+
+        let config = default_config();
+        let plan = plan_execution(&circ, &config);
+        assert_eq!(
+            plan.backend,
+            BackendType::CliffordT,
+            "50 qubits with 15 T-gates should use CliffordT backend"
+        );
+        assert!(plan.confidence >= 0.85);
     }
 }

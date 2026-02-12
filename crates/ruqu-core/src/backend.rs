@@ -25,6 +25,8 @@ pub enum BackendType {
     Stabilizer,
     /// Matrix Product State tensor network (bounded entanglement, hundreds+).
     TensorNetwork,
+    /// Clifford+T stabilizer rank decomposition (moderate T-count, many qubits).
+    CliffordT,
     /// Automatically select the best backend based on circuit analysis.
     Auto,
 }
@@ -330,7 +332,7 @@ pub struct ScalingInfo {
 /// Get scaling information for all supported backends.
 ///
 /// Returns a `Vec` with one [`ScalingInfo`] per backend (StateVector,
-/// Stabilizer, TensorNetwork) in that order.
+/// Stabilizer, TensorNetwork, CliffordT) in that order.
 pub fn scaling_report() -> Vec<ScalingInfo> {
     vec![
         ScalingInfo {
@@ -353,6 +355,13 @@ pub fn scaling_report() -> Vec<ScalingInfo> {
             max_qubits_approximate: 10_000,
             time_complexity: "O(n * chi^3 * gates)".into(),
             space_complexity: "O(n * chi^2)".into(),
+        },
+        ScalingInfo {
+            backend: BackendType::CliffordT,
+            max_qubits_exact: 1000,
+            max_qubits_approximate: 10_000,
+            time_complexity: "O(2^t * n^2 * gates) for t T-gates".into(),
+            space_complexity: "O(2^t * n^2)".into(),
         },
     ]
 }
@@ -442,12 +451,13 @@ mod tests {
     }
 
     #[test]
-    fn scaling_report_has_three_entries() {
+    fn scaling_report_has_four_entries() {
         let report = scaling_report();
-        assert_eq!(report.len(), 3);
+        assert_eq!(report.len(), 4);
         assert_eq!(report[0].backend, BackendType::StateVector);
         assert_eq!(report[1].backend, BackendType::Stabilizer);
         assert_eq!(report[2].backend, BackendType::TensorNetwork);
+        assert_eq!(report[3].backend, BackendType::CliffordT);
     }
 
     #[test]
