@@ -1,7 +1,7 @@
 //! # ruqu-core -- Quantum Simulation Engine
 //!
 //! Pure Rust state-vector quantum simulator for the ruVector stack.
-//! Supports up to 25 qubits, common gates, measurement, noise models,
+//! Supports up to 32 qubits (state vector), millions via stabilizer, common gates, measurement, noise models,
 //! and expectation value computation.
 //!
 //! ## Quick Start
@@ -21,9 +21,15 @@ pub mod types;
 pub mod error;
 pub mod gate;
 pub mod state;
+pub mod mixed_precision;
 pub mod circuit;
 pub mod simulator;
 pub mod optimizer;
+pub mod simd;
+pub mod backend;
+pub mod circuit_analyzer;
+pub mod stabilizer;
+pub mod tensor_network;
 
 /// Re-exports of the most commonly used items.
 pub mod prelude {
