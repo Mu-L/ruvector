@@ -69,6 +69,16 @@ const OFF_PARENT_ID: usize = 0xF10;
 const OFF_PARENT_HASH: usize = 0xF20;
 const OFF_LINEAGE_DEPTH: usize = 0xF40;
 
+// COW pointer offsets within the reserved area (0xF44..0xF84)
+// These follow FileIdentity and are backward-compatible (zeros = no COW).
+const OFF_COW_MAP_OFFSET: usize = 0xF44;
+const OFF_COW_MAP_GENERATION: usize = 0xF4C;
+const OFF_MEMBERSHIP_OFFSET: usize = 0xF50;
+const OFF_MEMBERSHIP_GENERATION: usize = 0xF58;
+const OFF_SNAPSHOT_EPOCH: usize = 0xF5C;
+const OFF_DOUBLE_ROOT_GENERATION: usize = 0xF60;
+const OFF_DOUBLE_ROOT_HASH: usize = 0xF64;
+
 const OFF_CHECKSUM: usize = 0xFFC;
 
 /// Deserialize a Level 0 root manifest from exactly 4096 bytes.
@@ -159,6 +169,27 @@ pub fn read_level0(data: &[u8; ROOT_MANIFEST_SIZE]) -> Result<Level0Root, RvfErr
     let fi_bytes = fi.to_bytes();
     root.reserved[..68].copy_from_slice(&fi_bytes);
 
+    // Read COW pointers from the reserved area (backward-compatible: zeros = no COW).
+    // These are stored as raw bytes in reserved[68..136].
+    let cow_map_offset = read_u64_le(data, OFF_COW_MAP_OFFSET);
+    let cow_map_generation = read_u32_le(data, OFF_COW_MAP_GENERATION);
+    let membership_offset = read_u64_le(data, OFF_MEMBERSHIP_OFFSET);
+    let membership_generation = read_u32_le(data, OFF_MEMBERSHIP_GENERATION);
+    let snapshot_epoch = read_u32_le(data, OFF_SNAPSHOT_EPOCH);
+    let double_root_generation = read_u32_le(data, OFF_DOUBLE_ROOT_GENERATION);
+    let mut double_root_hash = [0u8; 32];
+    double_root_hash.copy_from_slice(&data[OFF_DOUBLE_ROOT_HASH..OFF_DOUBLE_ROOT_HASH + 32]);
+
+    // Pack COW pointers into reserved[68..136]
+    let cow_off = 68;
+    root.reserved[cow_off..cow_off + 8].copy_from_slice(&cow_map_offset.to_le_bytes());
+    root.reserved[cow_off + 8..cow_off + 12].copy_from_slice(&cow_map_generation.to_le_bytes());
+    root.reserved[cow_off + 12..cow_off + 20].copy_from_slice(&membership_offset.to_le_bytes());
+    root.reserved[cow_off + 20..cow_off + 24].copy_from_slice(&membership_generation.to_le_bytes());
+    root.reserved[cow_off + 24..cow_off + 28].copy_from_slice(&snapshot_epoch.to_le_bytes());
+    root.reserved[cow_off + 28..cow_off + 32].copy_from_slice(&double_root_generation.to_le_bytes());
+    root.reserved[cow_off + 32..cow_off + 64].copy_from_slice(&double_root_hash);
+
     root.root_checksum = stored_crc;
 
     Ok(root)
@@ -226,6 +257,26 @@ pub fn write_level0(root: &Level0Root) -> [u8; ROOT_MANIFEST_SIZE] {
         buf[OFF_PARENT_ID..OFF_PARENT_ID + 16].copy_from_slice(&fi.parent_id);
         buf[OFF_PARENT_HASH..OFF_PARENT_HASH + 32].copy_from_slice(&fi.parent_hash);
         write_u32_le(&mut buf, OFF_LINEAGE_DEPTH, fi.lineage_depth);
+    }
+
+    // Write COW pointers from reserved[68..136] into the buffer
+    // Backward-compatible: zeros mean no COW.
+    if root.reserved.len() >= 132 {
+        let cow_off = 68;
+        buf[OFF_COW_MAP_OFFSET..OFF_COW_MAP_OFFSET + 8]
+            .copy_from_slice(&root.reserved[cow_off..cow_off + 8]);
+        buf[OFF_COW_MAP_GENERATION..OFF_COW_MAP_GENERATION + 4]
+            .copy_from_slice(&root.reserved[cow_off + 8..cow_off + 12]);
+        buf[OFF_MEMBERSHIP_OFFSET..OFF_MEMBERSHIP_OFFSET + 8]
+            .copy_from_slice(&root.reserved[cow_off + 12..cow_off + 20]);
+        buf[OFF_MEMBERSHIP_GENERATION..OFF_MEMBERSHIP_GENERATION + 4]
+            .copy_from_slice(&root.reserved[cow_off + 20..cow_off + 24]);
+        buf[OFF_SNAPSHOT_EPOCH..OFF_SNAPSHOT_EPOCH + 4]
+            .copy_from_slice(&root.reserved[cow_off + 24..cow_off + 28]);
+        buf[OFF_DOUBLE_ROOT_GENERATION..OFF_DOUBLE_ROOT_GENERATION + 4]
+            .copy_from_slice(&root.reserved[cow_off + 28..cow_off + 32]);
+        buf[OFF_DOUBLE_ROOT_HASH..OFF_DOUBLE_ROOT_HASH + 32]
+            .copy_from_slice(&root.reserved[cow_off + 32..cow_off + 64]);
     }
 
     // CRC32C over first 4092 bytes
@@ -395,5 +446,80 @@ mod tests {
     fn output_is_exactly_4096_bytes() {
         let bytes = write_level0(&Level0Root::zeroed());
         assert_eq!(bytes.len(), 4096);
+    }
+
+    #[test]
+    fn cow_pointers_round_trip() {
+        let mut root = sample_root();
+
+        // Set COW pointers in the reserved area (offsets 68..132)
+        let cow_off = 68;
+        let cow_map_offset: u64 = 0x1234_5678_9ABC_DEF0;
+        let cow_map_generation: u32 = 42;
+        let membership_offset: u64 = 0xFEDC_BA98_7654_3210;
+        let membership_generation: u32 = 7;
+        let snapshot_epoch: u32 = 100;
+        let double_root_generation: u32 = 3;
+        let double_root_hash = [0xEE; 32];
+
+        root.reserved[cow_off..cow_off + 8].copy_from_slice(&cow_map_offset.to_le_bytes());
+        root.reserved[cow_off + 8..cow_off + 12].copy_from_slice(&cow_map_generation.to_le_bytes());
+        root.reserved[cow_off + 12..cow_off + 20].copy_from_slice(&membership_offset.to_le_bytes());
+        root.reserved[cow_off + 20..cow_off + 24].copy_from_slice(&membership_generation.to_le_bytes());
+        root.reserved[cow_off + 24..cow_off + 28].copy_from_slice(&snapshot_epoch.to_le_bytes());
+        root.reserved[cow_off + 28..cow_off + 32].copy_from_slice(&double_root_generation.to_le_bytes());
+        root.reserved[cow_off + 32..cow_off + 64].copy_from_slice(&double_root_hash);
+
+        let bytes = write_level0(&root);
+        let decoded = read_level0(&bytes).expect("read_level0 should succeed");
+
+        // Verify COW pointers survived round-trip
+        let d_cow_off = 68;
+        let d_cow_map_offset = u64::from_le_bytes(
+            decoded.reserved[d_cow_off..d_cow_off + 8].try_into().unwrap(),
+        );
+        let d_cow_map_generation = u32::from_le_bytes(
+            decoded.reserved[d_cow_off + 8..d_cow_off + 12].try_into().unwrap(),
+        );
+        let d_membership_offset = u64::from_le_bytes(
+            decoded.reserved[d_cow_off + 12..d_cow_off + 20].try_into().unwrap(),
+        );
+        let d_membership_generation = u32::from_le_bytes(
+            decoded.reserved[d_cow_off + 20..d_cow_off + 24].try_into().unwrap(),
+        );
+        let d_snapshot_epoch = u32::from_le_bytes(
+            decoded.reserved[d_cow_off + 24..d_cow_off + 28].try_into().unwrap(),
+        );
+        let d_double_root_generation = u32::from_le_bytes(
+            decoded.reserved[d_cow_off + 28..d_cow_off + 32].try_into().unwrap(),
+        );
+        let d_double_root_hash = &decoded.reserved[d_cow_off + 32..d_cow_off + 64];
+
+        assert_eq!(d_cow_map_offset, cow_map_offset);
+        assert_eq!(d_cow_map_generation, cow_map_generation);
+        assert_eq!(d_membership_offset, membership_offset);
+        assert_eq!(d_membership_generation, membership_generation);
+        assert_eq!(d_snapshot_epoch, snapshot_epoch);
+        assert_eq!(d_double_root_generation, double_root_generation);
+        assert_eq!(d_double_root_hash, &double_root_hash[..]);
+    }
+
+    #[test]
+    fn cow_pointers_default_to_zero() {
+        // Verify that a root with no COW pointers still round-trips correctly
+        let root = Level0Root::zeroed();
+        let bytes = write_level0(&root);
+        let decoded = read_level0(&bytes).unwrap();
+
+        let cow_off = 68;
+        let cow_map_offset = u64::from_le_bytes(
+            decoded.reserved[cow_off..cow_off + 8].try_into().unwrap(),
+        );
+        let snapshot_epoch = u32::from_le_bytes(
+            decoded.reserved[cow_off + 24..cow_off + 28].try_into().unwrap(),
+        );
+
+        assert_eq!(cow_map_offset, 0);
+        assert_eq!(snapshot_epoch, 0);
     }
 }

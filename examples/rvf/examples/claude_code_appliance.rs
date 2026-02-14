@@ -4,6 +4,9 @@
 //! development environment. The file contains:
 //!
 //! 1. KERNEL_SEG — Linux microkernel (MicroLinux) with SSH enabled
+//!    Includes a 128-byte KernelBinding (ADR-031) that cryptographically
+//!    ties the kernel to the manifest root hash, preventing segment-swap
+//!    attacks. The binding also specifies a policy hash and segment mask.
 //! 2. VEC_SEG — Embeddings for installed packages, tools, and configs
 //! 3. EBPF_SEG — Network filter for secure access
 //! 4. WITNESS_SEG — Audit trail for every install step
@@ -11,6 +14,12 @@
 //!
 //! Boot script (embedded in kernel cmdline) installs Claude Code:
 //!   curl -fsSL https://claude.ai/install.sh | bash
+//!
+//! RVCOW capabilities (ADR-031):
+//!   - COW branching: derive user-specific branches without copying all data
+//!   - Membership filters: shared HNSW index with per-branch visibility
+//!   - Snapshot freeze: immutable snapshots for versioned deployments
+//!   - See `cow_branching`, `membership_filter`, `snapshot_freeze` examples
 //!
 //! Usage:
 //!   cargo run --example claude_code_appliance
@@ -35,6 +44,7 @@ use rvf_runtime::options::DistanceMetric;
 use rvf_runtime::{MetadataEntry, MetadataValue, QueryOptions, RvfOptions, RvfStore};
 use rvf_types::kernel::{KernelArch, KernelType};
 use rvf_types::{DerivationType, SegmentHeader, SegmentType};
+use rvf_kernel::KernelBuilder;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use std::fs;
 use std::path::Path;
@@ -163,13 +173,26 @@ fn main() {
     };
     let mut store = RvfStore::create(&store_path, options).expect("create store");
 
-    // Build a kernel image with ELF header stub
-    let mut kernel_image = Vec::with_capacity(16384);
-    kernel_image.extend_from_slice(&[0x7F, b'E', b'L', b'F']); // ELF magic
-    kernel_image.extend_from_slice(&[2, 1, 1, 0]); // 64-bit, LE, v1, Linux
-    for i in 8..16384u32 {
-        kernel_image.push((i.wrapping_mul(0xDEAD) >> 8) as u8);
-    }
+    // Build a REAL initramfs using rvf-kernel's cpio builder.
+    // This produces a valid gzipped cpio/newc archive with:
+    //   - Standard Linux directory structure (/bin, /sbin, /etc, /dev, ...)
+    //   - Device nodes (console, ttyS0, null, zero, urandom)
+    //   - /init script that boots network, starts SSH, installs Claude Code
+    let builder = KernelBuilder::new(KernelArch::X86_64)
+        .with_initramfs(&["sshd", "rvf-server"]);
+    let initramfs = builder.build_initramfs(
+        &["sshd", "rvf-server"],
+        &[], // Extra binaries would be added here in production
+    ).expect("build initramfs");
+    println!("  Initramfs:        {} bytes (real gzipped cpio archive)", initramfs.len());
+
+    // In production, this would be a real bzImage from KernelBuilder::build_docker()
+    // or KernelBuilder::from_prebuilt(). Here we embed the initramfs as the kernel
+    // image to demonstrate the real cpio builder output. For actual booting, use:
+    //   let kernel = KernelBuilder::new(KernelArch::X86_64)
+    //       .kernel_version("6.8.12")
+    //       .build_docker(&context_dir)?;
+    let kernel_image = initramfs;
 
     // The kernel cmdline configures the system on first boot:
     //   1. Enable networking
@@ -291,9 +314,13 @@ fn main() {
     // ================================================================
     println!("--- Phase 5: eBPF Network Filter ---\n");
 
-    // Stub eBPF program for SSH + API port filtering
-    let ebpf_bytecode = vec![0xBFu8; 1024];
-    let btf = vec![0x00u8; 256];
+    // Real eBPF socket filter source from rvf-ebpf crate.
+    // This is the actual BPF C source code for port-based access control.
+    // In production, compile with: EbpfCompiler::new()?.compile_source(source, SocketFilter)
+    let ebpf_source = rvf_ebpf::programs::SOCKET_FILTER;
+    println!("  eBPF source:      {} bytes (real BPF C program)", ebpf_source.len());
+    let ebpf_bytecode = ebpf_source.as_bytes().to_vec();
+    let btf = Vec::new(); // BTF generated during clang compilation
     let ebpf_seg_id = store
         .embed_ebpf(
             0x02, // SocketFilter

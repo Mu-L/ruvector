@@ -34,6 +34,10 @@ fn segment_type_name(seg_type: u8) -> &'static str {
         t if t == SegmentType::MetaIdx as u8 => "MetaIdx",
         t if t == SegmentType::Kernel as u8 => "Kernel",
         t if t == SegmentType::Ebpf as u8 => "Ebpf",
+        t if t == SegmentType::CowMap as u8 => "CowMap",
+        t if t == SegmentType::Refcount as u8 => "Refcount",
+        t if t == SegmentType::Membership as u8 => "Membership",
+        t if t == SegmentType::Delta as u8 => "Delta",
         _ => "Unknown",
     }
 }

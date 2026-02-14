@@ -13,15 +13,20 @@ extern crate alloc;
 pub mod checksum;
 pub mod compression;
 pub mod constants;
+pub mod cow_map;
 pub mod data_type;
+pub mod delta;
 pub mod ebpf;
 pub mod error;
 pub mod filter;
 pub mod flags;
 pub mod kernel;
+pub mod kernel_binding;
 pub mod manifest;
+pub mod membership;
 pub mod profile;
 pub mod quant_type;
+pub mod refcount;
 pub mod segment;
 pub mod segment_type;
 pub mod signature;
@@ -45,6 +50,11 @@ pub use lineage::{
     WITNESS_DERIVATION, WITNESS_LINEAGE_MERGE, WITNESS_LINEAGE_SNAPSHOT,
     WITNESS_LINEAGE_TRANSFORM, WITNESS_LINEAGE_VERIFY,
 };
+pub use cow_map::{CowMapEntry, CowMapHeader, MapFormat, COWMAP_MAGIC};
+pub use delta::{DeltaEncoding, DeltaHeader, DELTA_MAGIC};
+pub use kernel_binding::KernelBinding;
+pub use membership::{FilterMode, FilterType, MembershipHeader, MEMBERSHIP_MAGIC};
+pub use refcount::{RefcountHeader, REFCOUNT_MAGIC};
 pub use checksum::ChecksumAlgo;
 pub use compression::CompressionAlgo;
 pub use constants::*;

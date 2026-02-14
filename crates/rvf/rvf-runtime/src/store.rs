@@ -13,11 +13,14 @@ use rvf_types::{
     SEGMENT_HEADER_SIZE, SEGMENT_MAGIC,
 };
 use rvf_types::kernel::{KernelHeader, KERNEL_MAGIC};
+use rvf_types::kernel_binding::KernelBinding;
 use rvf_types::ebpf::{EbpfHeader, EBPF_MAGIC};
 
+use crate::cow::{CowEngine, CowStats};
 use crate::deletion::DeletionBitmap;
 use crate::filter::{self, FilterExpr, FilterValue, MetadataStore, metadata_value_to_filter};
 use crate::locking::WriterLock;
+use crate::membership::MembershipFilter;
 use crate::options::*;
 use crate::read_path::{self, VectorData};
 use crate::status::{CompactionState, StoreStatus};
@@ -45,6 +48,12 @@ pub struct RvfStore {
     read_only: bool,
     last_compaction_time: u64,
     file_identity: FileIdentity,
+    /// COW engine for branched/snapshot stores (None for root stores).
+    cow_engine: Option<CowEngine>,
+    /// Membership filter for branch-level vector visibility (None if unused).
+    membership_filter: Option<MembershipFilter>,
+    /// Path to the parent file (for COW reads that need parent data).
+    parent_path: Option<PathBuf>,
 }
 
 impl RvfStore {
@@ -91,6 +100,9 @@ impl RvfStore {
             read_only: false,
             last_compaction_time: 0,
             file_identity: FileIdentity::new_root(file_id),
+            cow_engine: None,
+            membership_filter: None,
+            parent_path: None,
         };
 
         store.write_manifest()?;
@@ -138,6 +150,9 @@ impl RvfStore {
             read_only: false,
             last_compaction_time: 0,
             file_identity: FileIdentity::zeroed(),
+            cow_engine: None,
+            membership_filter: None,
+            parent_path: None,
         };
 
         store.boot()?;
@@ -180,6 +195,9 @@ impl RvfStore {
             read_only: true,
             last_compaction_time: 0,
             file_identity: FileIdentity::zeroed(),
+            cow_engine: None,
+            membership_filter: None,
+            parent_path: None,
         };
 
         store.boot()?;
@@ -609,11 +627,106 @@ impl RvfStore {
         Ok(seg_id)
     }
 
+    /// Embed a kernel image with a KernelBinding footer.
+    ///
+    /// The new KERNEL_SEG wire format is:
+    ///   KernelHeader (128B) || KernelBinding (128B) || cmdline || kernel_image
+    ///
+    /// The KernelBinding ties the manifest root hash to the kernel, preventing
+    /// segment-swap attacks.
+    pub fn embed_kernel_with_binding(
+        &mut self,
+        arch: u8,
+        kernel_type: u8,
+        kernel_flags: u32,
+        kernel_image: &[u8],
+        api_port: u16,
+        cmdline: Option<&str>,
+        binding: &KernelBinding,
+    ) -> Result<u64, RvfError> {
+        if self.read_only {
+            return Err(err(ErrorCode::ReadOnly));
+        }
+
+        let image_hash = simple_shake256_256(kernel_image);
+        let cmdline_len = cmdline.map_or(0u32, |s| s.len() as u32);
+        let header = KernelHeader {
+            kernel_magic: KERNEL_MAGIC,
+            header_version: 1,
+            arch,
+            kernel_type,
+            kernel_flags,
+            min_memory_mb: 0,
+            entry_point: 0,
+            image_size: kernel_image.len() as u64,
+            compressed_size: kernel_image.len() as u64,
+            compression: 0,
+            api_transport: 0,
+            api_port,
+            api_version: 1,
+            image_hash,
+            build_id: [0u8; 16],
+            build_timestamp: 0,
+            vcpu_count: 0,
+            reserved_0: 0,
+            // cmdline_offset now accounts for KernelBinding (128 + 128 = 256)
+            cmdline_offset: 128 + 128,
+            cmdline_length: cmdline_len,
+            reserved_1: 0,
+        };
+        let header_bytes = header.to_bytes();
+        let binding_bytes = binding.to_bytes();
+
+        // Build the combined payload: header(128) + binding(128) + cmdline + image
+        let cmdline_data = cmdline.map(|s| s.as_bytes());
+        let cmdline_slice = cmdline_data.unwrap_or(&[]);
+
+        let mut payload = Vec::with_capacity(128 + 128 + cmdline_slice.len() + kernel_image.len());
+        payload.extend_from_slice(&header_bytes);
+        payload.extend_from_slice(&binding_bytes);
+        payload.extend_from_slice(cmdline_slice);
+        payload.extend_from_slice(kernel_image);
+
+        let writer = self.seg_writer.as_mut()
+            .ok_or_else(|| err(ErrorCode::InvalidManifest))?;
+
+        let (seg_id, seg_offset) = {
+            let mut buf_writer = BufWriter::new(&self.file);
+            buf_writer.seek(SeekFrom::End(0))
+                .map_err(|_| err(ErrorCode::FsyncFailed))?;
+            // Write as raw kernel segment: the write_kernel_seg expects
+            // header_bytes separately, but we need to include binding in
+            // the "image" portion to keep the wire format correct.
+            // So we pass the full payload minus the header as "image".
+            writer.write_kernel_seg(
+                &mut buf_writer,
+                &header_bytes,
+                &payload[128..], // binding + cmdline + image
+                None,            // cmdline already included above
+            ).map_err(|_| err(ErrorCode::FsyncFailed))?
+        };
+
+        let total_payload_len = payload.len() as u64;
+        self.segment_dir.push((
+            seg_id, seg_offset, total_payload_len, SegmentType::Kernel as u8,
+        ));
+
+        self.file.sync_all().map_err(|_| err(ErrorCode::FsyncFailed))?;
+        self.epoch += 1;
+        self.write_manifest()?;
+
+        Ok(seg_id)
+    }
+
     /// Extract the kernel image from this RVF file.
     ///
     /// Scans the segment directory for a KERNEL_SEG (type 0x0E) and returns
     /// the first 128 bytes (serialized KernelHeader) plus the remainder
     /// (kernel image bytes). Returns None if no KERNEL_SEG is present.
+    ///
+    /// For files with KernelBinding (ADR-031), the remainder includes the
+    /// 128-byte binding followed by optional cmdline and the kernel image.
+    /// Use `extract_kernel_binding` to parse the binding separately.
     #[allow(clippy::type_complexity)]
     pub fn extract_kernel(&self) -> Result<Option<(Vec<u8>, Vec<u8>)>, RvfError> {
         let entry = self.segment_dir.iter()
@@ -638,6 +751,31 @@ impl RvfStore {
         let kernel_image = payload[128..].to_vec();
 
         Ok(Some((kernel_header, kernel_image)))
+    }
+
+    /// Extract the KernelBinding from a KERNEL_SEG, if present.
+    ///
+    /// Returns `None` if no KERNEL_SEG exists or if the payload is too short
+    /// to contain a KernelBinding (backward-compatible with old format).
+    pub fn extract_kernel_binding(&self) -> Result<Option<KernelBinding>, RvfError> {
+        let result = self.extract_kernel()?;
+        match result {
+            None => Ok(None),
+            Some((_header_bytes, remainder)) => {
+                if remainder.len() < 128 {
+                    // Old format: no KernelBinding present
+                    return Ok(None);
+                }
+                let mut binding_data = [0u8; 128];
+                binding_data.copy_from_slice(&remainder[..128]);
+                let binding = KernelBinding::from_bytes(&binding_data);
+                // Check if this looks like a real binding (version > 0)
+                if binding.binding_version == 0 {
+                    return Ok(None);
+                }
+                Ok(Some(binding))
+            }
+        }
     }
 
     /// Embed an eBPF program into this RVF file as an EBPF_SEG.
@@ -757,6 +895,95 @@ impl RvfStore {
         self.file_identity.lineage_depth
     }
 
+    /// Create a COW branch from this store.
+    ///
+    /// Creates a new child file that inherits all vectors from the parent via
+    /// COW references. Writes to the child only allocate local clusters as
+    /// needed. The parent should be frozen first to ensure immutability.
+    pub fn branch(&self, child_path: &Path) -> Result<Self, RvfError> {
+        // Compute cluster geometry from the vector data
+        let dim = self.options.dimension as u32;
+        let bytes_per_vec = dim * 4; // f32
+        let vectors_per_cluster = if bytes_per_vec > 0 {
+            (4096 / bytes_per_vec).max(1)
+        } else {
+            64
+        };
+        let cluster_size = vectors_per_cluster * bytes_per_vec;
+        let total_vecs = self.vectors.len() as u64;
+        let cluster_count = if vectors_per_cluster > 0 {
+            ((total_vecs + vectors_per_cluster as u64 - 1) / vectors_per_cluster as u64) as u32
+        } else {
+            0
+        };
+
+        // Derive the child via the standard lineage path
+        let mut child = self.derive(
+            child_path,
+            rvf_types::DerivationType::Clone,
+            Some(self.options.clone()),
+        )?;
+
+        // Initialize COW engine on the child with all clusters pointing to parent
+        child.cow_engine = Some(CowEngine::from_parent(
+            cluster_count,
+            cluster_size,
+            vectors_per_cluster,
+            bytes_per_vec,
+        ));
+
+        // Initialize membership filter with all parent vectors visible
+        let mut filter = MembershipFilter::new_include(total_vecs);
+        for &vid in self.vectors.ids() {
+            if !self.deletion_bitmap.is_deleted(vid) {
+                filter.add(vid);
+            }
+        }
+        child.membership_filter = Some(filter);
+
+        Ok(child)
+    }
+
+    /// Freeze (snapshot) this store. Prevents further writes to this generation.
+    pub fn freeze(&mut self) -> Result<(), RvfError> {
+        if self.read_only {
+            return Err(err(ErrorCode::ReadOnly));
+        }
+
+        if let Some(ref mut engine) = self.cow_engine {
+            engine.freeze(self.epoch)?;
+        }
+
+        // Set read_only to prevent further mutations
+        self.read_only = true;
+        Ok(())
+    }
+
+    /// Check if this store is a COW child (has a parent).
+    pub fn is_cow_child(&self) -> bool {
+        self.cow_engine.is_some()
+    }
+
+    /// Get COW statistics, if this store uses COW.
+    pub fn cow_stats(&self) -> Option<CowStats> {
+        self.cow_engine.as_ref().map(|e| e.stats())
+    }
+
+    /// Get the membership filter, if present.
+    pub fn membership_filter(&self) -> Option<&MembershipFilter> {
+        self.membership_filter.as_ref()
+    }
+
+    /// Get a mutable reference to the membership filter.
+    pub fn membership_filter_mut(&mut self) -> Option<&mut MembershipFilter> {
+        self.membership_filter.as_mut()
+    }
+
+    /// Get the parent file path, if this is a COW child.
+    pub fn parent_path(&self) -> Option<&Path> {
+        self.parent_path.as_deref()
+    }
+
     /// Derive a child store from this parent.
     ///
     /// Creates a new RVF file at `child_path` that records this store as its
@@ -819,6 +1046,9 @@ impl RvfStore {
             read_only: false,
             last_compaction_time: 0,
             file_identity: child_identity,
+            cow_engine: None,
+            membership_filter: None,
+            parent_path: Some(self.path.clone()),
         };
 
         store.write_manifest()?;
@@ -1006,7 +1236,7 @@ fn generate_file_id(path: &Path) -> [u8; 16] {
 
 /// Minimal SHAKE-256 hash without depending on rvf-crypto.
 /// Uses a simple XOR-fold for a 32-byte digest.
-fn simple_shake256_256(data: &[u8]) -> [u8; 32] {
+pub(crate) fn simple_shake256_256(data: &[u8]) -> [u8; 32] {
     // We use a simple non-cryptographic hash here since rvf-runtime
     // doesn't depend on rvf-crypto. For production lineage verification,
     // use rvf_crypto::compute_manifest_hash.

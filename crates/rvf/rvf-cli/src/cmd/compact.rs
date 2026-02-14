@@ -11,12 +11,20 @@ use super::map_rvf_err;
 pub struct CompactArgs {
     /// Path to the RVF store
     path: String,
+    /// Strip unknown segment types (segments not recognized by this version)
+    #[arg(long)]
+    strip_unknown: bool,
     /// Output as JSON
     #[arg(long)]
     json: bool,
 }
 
 pub fn run(args: CompactArgs) -> Result<(), Box<dyn std::error::Error>> {
+    if args.strip_unknown {
+        eprintln!("Warning: --strip-unknown will remove segment types not recognized by this version.");
+        eprintln!("         This may discard data written by newer tools.");
+    }
+
     let mut store = RvfStore::open(Path::new(&args.path)).map_err(map_rvf_err)?;
 
     let status_before = store.status();
@@ -34,6 +42,7 @@ pub fn run(args: CompactArgs) -> Result<(), Box<dyn std::error::Error>> {
             "vectors_after": status_after.total_vectors,
             "file_size_before": status_before.file_size,
             "file_size_after": status_after.file_size,
+            "strip_unknown": args.strip_unknown,
         }));
     } else {
         println!("Compaction complete:");
@@ -50,6 +59,9 @@ pub fn run(args: CompactArgs) -> Result<(), Box<dyn std::error::Error>> {
             "File size after:",
             &format!("{} bytes", status_after.file_size),
         );
+        if args.strip_unknown {
+            crate::output::print_kv("Strip unknown:", "yes");
+        }
     }
     Ok(())
 }

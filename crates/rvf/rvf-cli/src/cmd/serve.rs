@@ -1,26 +1,36 @@
-//! `rvf serve` -- Start HTTP server (stub, requires 'serve' feature).
+//! `rvf serve` -- Start HTTP/TCP server for an RVF store.
 
 use clap::Args;
 
 #[derive(Args)]
 pub struct ServeArgs {
     /// Path to the RVF store
-    #[allow(dead_code)]
-    path: String,
-    /// Server port
+    pub path: String,
+    /// HTTP server port
     #[arg(short, long, default_value = "8080")]
-    #[allow(dead_code)]
-    port: u16,
+    pub port: u16,
+    /// TCP streaming port (defaults to HTTP port + 1000)
+    #[arg(long)]
+    pub tcp_port: Option<u16>,
 }
 
-pub fn run(_args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(args: ServeArgs) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "serve")]
     {
-        eprintln!("HTTP server not yet implemented in CLI");
-        return Ok(());
+        let rt = tokio::runtime::Runtime::new()?;
+        rt.block_on(async {
+            let config = rvf_server::ServerConfig {
+                http_port: args.port,
+                tcp_port: args.tcp_port.unwrap_or(args.port + 1000),
+                data_path: std::path::PathBuf::from(&args.path),
+                dimension: 0, // auto-detect from file
+            };
+            rvf_server::run(config).await
+        })
     }
     #[cfg(not(feature = "serve"))]
     {
+        let _ = args;
         eprintln!(
             "The 'serve' feature is not enabled. Rebuild with: cargo build -p rvf-cli --features serve"
         );

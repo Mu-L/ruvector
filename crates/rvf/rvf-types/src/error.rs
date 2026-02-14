@@ -102,6 +102,26 @@ pub enum ErrorCode {
     LineageBroken = 0x0602,
     /// Lineage chain contains a cycle.
     LineageCyclic = 0x0603,
+
+    // ---- Category 0x07: COW Errors ----
+    /// COW cluster map is corrupt or unreadable.
+    CowMapCorrupt = 0x0700,
+    /// Referenced cluster not found in COW map.
+    ClusterNotFound = 0x0701,
+    /// Parent chain is broken (missing ancestor).
+    ParentChainBroken = 0x0702,
+    /// Delta patch exceeds compaction threshold.
+    DeltaThresholdExceeded = 0x0703,
+    /// Snapshot is frozen and cannot be modified.
+    SnapshotFrozen = 0x0704,
+    /// Membership filter is invalid or corrupt.
+    MembershipInvalid = 0x0705,
+    /// Generation counter is stale (concurrent modification).
+    GenerationStale = 0x0706,
+    /// Kernel binding hash does not match manifest.
+    KernelBindingMismatch = 0x0707,
+    /// Double-root manifest is corrupt.
+    DoubleRootCorrupt = 0x0708,
 }
 
 impl ErrorCode {
@@ -175,6 +195,16 @@ impl TryFrom<u16> for ErrorCode {
             0x0601 => Ok(Self::ParentHashMismatch),
             0x0602 => Ok(Self::LineageBroken),
             0x0603 => Ok(Self::LineageCyclic),
+
+            0x0700 => Ok(Self::CowMapCorrupt),
+            0x0701 => Ok(Self::ClusterNotFound),
+            0x0702 => Ok(Self::ParentChainBroken),
+            0x0703 => Ok(Self::DeltaThresholdExceeded),
+            0x0704 => Ok(Self::SnapshotFrozen),
+            0x0705 => Ok(Self::MembershipInvalid),
+            0x0706 => Ok(Self::GenerationStale),
+            0x0707 => Ok(Self::KernelBindingMismatch),
+            0x0708 => Ok(Self::DoubleRootCorrupt),
 
             other => Err(other),
         }
@@ -266,6 +296,15 @@ mod tests {
             (0x0601, ErrorCode::ParentHashMismatch),
             (0x0602, ErrorCode::LineageBroken),
             (0x0603, ErrorCode::LineageCyclic),
+            (0x0700, ErrorCode::CowMapCorrupt),
+            (0x0701, ErrorCode::ClusterNotFound),
+            (0x0702, ErrorCode::ParentChainBroken),
+            (0x0703, ErrorCode::DeltaThresholdExceeded),
+            (0x0704, ErrorCode::SnapshotFrozen),
+            (0x0705, ErrorCode::MembershipInvalid),
+            (0x0706, ErrorCode::GenerationStale),
+            (0x0707, ErrorCode::KernelBindingMismatch),
+            (0x0708, ErrorCode::DoubleRootCorrupt),
         ];
         for &(raw, expected) in codes {
             assert_eq!(ErrorCode::try_from(raw), Ok(expected), "code 0x{raw:04X}");
@@ -287,6 +326,7 @@ mod tests {
         assert_eq!(ErrorCode::TileTrap.category(), 0x04);
         assert_eq!(ErrorCode::KeyNotFound.category(), 0x05);
         assert_eq!(ErrorCode::ParentNotFound.category(), 0x06);
+        assert_eq!(ErrorCode::CowMapCorrupt.category(), 0x07);
     }
 
     #[test]
@@ -312,6 +352,22 @@ mod tests {
         let s = format!("{e}");
         assert!(s.contains("bad magic"));
         assert!(s.contains("52564653"));
+    }
+
+    #[test]
+    fn cow_error_check() {
+        assert_eq!(ErrorCode::CowMapCorrupt as u16, 0x0700);
+        assert_eq!(ErrorCode::ClusterNotFound as u16, 0x0701);
+        assert_eq!(ErrorCode::ParentChainBroken as u16, 0x0702);
+        assert_eq!(ErrorCode::DeltaThresholdExceeded as u16, 0x0703);
+        assert_eq!(ErrorCode::SnapshotFrozen as u16, 0x0704);
+        assert_eq!(ErrorCode::MembershipInvalid as u16, 0x0705);
+        assert_eq!(ErrorCode::GenerationStale as u16, 0x0706);
+        assert_eq!(ErrorCode::KernelBindingMismatch as u16, 0x0707);
+        assert_eq!(ErrorCode::DoubleRootCorrupt as u16, 0x0708);
+        // All COW errors should be category 0x07
+        assert_eq!(ErrorCode::CowMapCorrupt.category(), 0x07);
+        assert_eq!(ErrorCode::DoubleRootCorrupt.category(), 0x07);
     }
 
     #[test]

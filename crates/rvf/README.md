@@ -35,6 +35,16 @@ A `.rvf` file can store vector embeddings, carry LoRA adapter deltas, embed GNN 
 
 This is not a database format. It is an **executable knowledge unit**.
 
+                                                                                                                                                                                        
+  • Self boot, self contained Linux PS as a microVM                                                                                                                                                               
+  • Accelerate via eBPF                                                                                                                                                                  
+  • Run anywhere, and degrade to WASM                                                                                                                                                                      
+  • Emit a witness chain                                                                                                                                                                 
+  • Bind kernel measurement to data                                                                                                                                                      
+  • Ai Storage including LoRA + GNN + quantum state                                                                                                                                                     
+  • Remain backward compatible as pure data                                                                                                                                              
+                                        
+
 ```
                           .rvf file
               +---------------------------+
@@ -1328,6 +1338,104 @@ The root manifest (Level 0) occupies the last 4,096 bytes of the most recent MAN
 - Profile identifiers
 
 </details>
+
+---
+
+## RVCOW: Vector-Native Copy-on-Write Branching
+
+RVF supports copy-on-write branching at cluster granularity (ADR-031). Instead of copying an entire file to create a variant, a derived file stores only the clusters that changed. This enables Git-like branching for vector databases.
+
+### COW Branching
+
+A COW child inherits all vector data from its parent by reference. Writes only allocate local clusters as needed (one slab copy per modified cluster). A 1M-vector parent (~512 MB) with 100 modified vectors produces a child of ~10 clusters (~2.5 MB).
+
+```rust
+use rvf_runtime::RvfStore;
+
+// Create parent with vectors
+let parent = RvfStore::create(Path::new("parent.rvf"), options)?;
+// ... ingest vectors ...
+
+// Derive a COW child — inherits all data, stores only changes
+let child = parent.branch(Path::new("child.rvf"))?;
+
+// COW statistics
+if let Some(stats) = child.cow_stats() {
+    println!("Clusters: {} total, {} local", stats.cluster_count, stats.local_cluster_count);
+}
+```
+
+### Membership Filters
+
+Branches share the parent's HNSW index. A membership filter (dense bitmap) controls which vectors are visible per branch. Excluded nodes still serve as routing waypoints during graph traversal but are never returned in results.
+
+- **Include mode** (default): vector visible iff `filter.contains(id)`. Empty filter = empty view (fail-safe).
+- **Exclude mode**: vector visible iff `!filter.contains(id)`. Empty filter = full view.
+
+```rust
+use rvf_runtime::membership::MembershipFilter;
+
+let mut filter = MembershipFilter::new_include(1_000_000);
+filter.add(42);        // vector 42 is now visible
+filter.contains(42);   // true
+filter.contains(100);  // false
+```
+
+### Snapshot Freeze
+
+Freeze creates an immutable snapshot of the current generation. Further writes require deriving a new branch. Freeze is a metadata-only operation (no data copy).
+
+```rust
+let mut branch = parent.branch(Path::new("snapshot.rvf"))?;
+branch.freeze()?;
+
+// Writes now fail:
+assert!(branch.ingest_batch(&[&vec], &[1], None).is_err());
+
+// Continue on a new branch:
+let next = parent.branch(Path::new("next.rvf"))?;
+```
+
+### Kernel Binding (128 bytes)
+
+The `KernelBinding` footer (128 bytes, padded) cryptographically ties a KERNEL_SEG to its manifest. This prevents segment-swap attacks where a signed kernel from one file is embedded into a different file.
+
+```rust
+use rvf_types::kernel_binding::KernelBinding;
+
+let binding = KernelBinding {
+    manifest_root_hash: manifest_hash,   // SHAKE-256-256 of Level0Root
+    policy_hash: policy_hash,            // SHAKE-256-256 of security policy
+    binding_version: 1,
+    ..Default::default()
+};
+
+store.embed_kernel_with_binding(arch, ktype, flags, &image, port, cmdline, &binding)?;
+```
+
+### New Segment Types
+
+| Code | Name | Size | Purpose |
+|------|------|------|---------|
+| `0x20` | COW_MAP | 64B header | Cluster ownership map (local vs parent) |
+| `0x21` | REFCOUNT | 32B header | Cluster reference counts (rebuildable) |
+| `0x22` | MEMBERSHIP | 96B header | Vector visibility filter for branches |
+| `0x23` | DELTA | 64B header | Sparse delta patches between clusters |
+
+### New CLI Commands
+
+```bash
+rvf launch <file>                        # Boot RVF in QEMU microVM
+rvf embed-kernel <file> [--arch x86_64]  # Embed kernel image
+rvf embed-ebpf <file> --program <src.c>  # Compile and embed eBPF
+rvf filter <file> --include <id-list>    # Create membership filter
+rvf freeze <file>                        # Snapshot-freeze current state
+rvf verify-witness <file>                # Verify witness chain
+rvf verify-attestation <file>            # Verify KernelBinding + attestation
+rvf rebuild-refcounts <file>             # Recompute refcounts from COW map
+```
+
+For the full specification, see [ADR-031: RVCOW Branching and Real Computational Containers](docs/adr/ADR-031-rvcow-branching-and-real-computational-containers.md).
 
 ---
 

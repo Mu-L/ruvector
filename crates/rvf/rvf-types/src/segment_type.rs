@@ -39,6 +39,14 @@ pub enum SegmentType {
     Kernel = 0x0E,
     /// Embedded eBPF program for kernel fast path.
     Ebpf = 0x0F,
+    /// COW cluster mapping.
+    CowMap = 0x20,
+    /// Cluster reference counts.
+    Refcount = 0x21,
+    /// Vector membership filter.
+    Membership = 0x22,
+    /// Sparse delta patches.
+    Delta = 0x23,
 }
 
 impl TryFrom<u8> for SegmentType {
@@ -62,6 +70,10 @@ impl TryFrom<u8> for SegmentType {
             0x0D => Ok(Self::MetaIdx),
             0x0E => Ok(Self::Kernel),
             0x0F => Ok(Self::Ebpf),
+            0x20 => Ok(Self::CowMap),
+            0x21 => Ok(Self::Refcount),
+            0x22 => Ok(Self::Membership),
+            0x23 => Ok(Self::Delta),
             other => Err(other),
         }
     }
@@ -90,6 +102,10 @@ mod tests {
             SegmentType::MetaIdx,
             SegmentType::Kernel,
             SegmentType::Ebpf,
+            SegmentType::CowMap,
+            SegmentType::Refcount,
+            SegmentType::Membership,
+            SegmentType::Delta,
         ];
         for v in variants {
             let raw = v as u8;
@@ -99,7 +115,7 @@ mod tests {
 
     #[test]
     fn invalid_value_returns_err() {
-        assert_eq!(SegmentType::try_from(0x10), Err(0x10));
+        assert_eq!(SegmentType::try_from(0x24), Err(0x24));
         assert_eq!(SegmentType::try_from(0xF0), Err(0xF0));
         assert_eq!(SegmentType::try_from(0xFF), Err(0xFF));
     }

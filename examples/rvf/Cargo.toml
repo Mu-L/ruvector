@@ -14,6 +14,9 @@ rvf-index = { path = "../../crates/rvf/rvf-index" }
 rvf-quant = { path = "../../crates/rvf/rvf-quant" }
 rvf-crypto = { path = "../../crates/rvf/rvf-crypto" }
 rvf-runtime = { path = "../../crates/rvf/rvf-runtime" }
+rvf-kernel = { path = "../../crates/rvf/rvf-kernel" }
+rvf-launch = { path = "../../crates/rvf/rvf-launch" }
+rvf-ebpf = { path = "../../crates/rvf/rvf-ebpf" }
 rand = "0.8"
 tempfile = "3"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
@@ -185,3 +188,15 @@ path = "examples/generate_all.rs"
 [[example]]
 name = "claude_code_appliance"
 path = "examples/claude_code_appliance.rs"
+
+[[example]]
+name = "cow_branching"
+path = "examples/cow_branching.rs"
+
+[[example]]
+name = "membership_filter"
+path = "examples/membership_filter.rs"
+
+[[example]]
+name = "snapshot_freeze"
+path = "examples/snapshot_freeze.rs"
