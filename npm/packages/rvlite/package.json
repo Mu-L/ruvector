@@ -77,5 +77,8 @@
     "@anthropic-ai/sdk": {
       "optional": true
     }
+  },
+  "optionalDependencies": {
+    "@ruvector/rvf-wasm": "^0.1.0"
   }
 }

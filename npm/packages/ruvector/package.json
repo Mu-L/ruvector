@@ -64,6 +64,9 @@
     "commander": "^11.1.0",
     "ora": "^5.4.1"
   },
+  "optionalDependencies": {
+    "@ruvector/rvf": "^0.1.0"
+  },
   "devDependencies": {
     "@types/node": "^20.10.5",
     "typescript": "^5.3.3"

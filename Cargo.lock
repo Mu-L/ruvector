@@ -9372,6 +9372,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rvf-adapter-rvlite"
+version = "0.1.0"
+dependencies = [
+ "rvf-runtime",
+ "rvf-types",
+ "tempfile",
+]
+
+[[package]]
 name = "rvf-benches"
 version = "0.1.0"
 dependencies = [
@@ -9450,6 +9459,7 @@ version = "0.1.0"
 dependencies = [
  "ed25519-dalek",
  "rand 0.8.5",
+ "rvf-adapter-rvlite",
  "rvf-crypto",
  "rvf-index",
  "rvf-manifest",
@@ -9553,6 +9563,8 @@ dependencies = [
  "once_cell",
  "parking_lot 0.12.5",
  "ruvector-core 2.0.2",
+ "rvf-runtime",
+ "rvf-types",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",

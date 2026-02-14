@@ -8,5 +8,8 @@
 pub mod indexeddb;
 pub mod state;
 
+#[cfg(feature = "rvf-backend")]
+pub mod epoch;
+
 pub use indexeddb::IndexedDBStorage;
 pub use state::{GraphState, RvLiteState, TripleStoreState, VectorState};
