@@ -18,14 +18,18 @@ Most vector databases are static — they store embeddings and search them. That
 
 | | Pinecone/Weaviate | RuVector |
 |---|---|---|
-| **Search improves over time** | ❌ | ✅ GNN layers learn from usage |
-| **Run LLMs locally** | ❌ | ✅ ruvllm + RuvLTRA models ($0) |
-| **Graph queries (Cypher)** | ❌ | ✅ `MATCH (a)-[:SIMILAR]->(b)` |
-| **Self-learning AI hooks** | ❌ | ✅ Q-learning, HNSW memory |
-| **Self-booting microservice** | ❌ | ✅ [RVF cognitive container](./crates/rvf/README.md) boots Linux in 125 ms |
-| **Real-time graph updates** | ❌ Rebuild index | ✅ Dynamic min-cut (no rebuild) |
-| **Horizontal scaling** | 💰 Paid | ✅ Raft consensus, free |
-| **Works offline** | ❌ | ✅ Browser, edge, embedded, bare metal |
+| 🧠 **Search improves over time** | ❌ | ✅ GNN layers learn from usage |
+| 🤖 **Run LLMs locally** | ❌ | ✅ ruvllm + RuvLTRA models ($0) |
+| 🔗 **Graph queries (Cypher)** | ❌ | ✅ `MATCH (a)-[:SIMILAR]->(b)` |
+| 📚 **Self-learning AI hooks** | ❌ | ✅ Q-learning, HNSW memory |
+| 🚀 **Self-booting microservice** | ❌ | ✅ [RVF cognitive container](./crates/rvf/README.md) boots Linux in 125 ms |
+| ⚡ **Real-time graph updates** | ❌ Rebuild index | ✅ Dynamic min-cut (no rebuild) |
+| 📦 **Single-file deployment** | ❌ Server required | ✅ One `.rvf` file — no server, no deps |
+| 🔐 **Cryptographic audit trail** | ❌ | ✅ Witness chains + post-quantum signatures |
+| 🌐 **Works offline** | ❌ | ✅ Browser, edge, embedded, bare metal |
+| 💰 **Cost** | Per-query pricing | ✅ $0 — fully open source (MIT) |
+| 📈 **Horizontal scaling** | 💰 Paid | ✅ Raft consensus, free |
+| 🌿 **Git-like branching** | ❌ | ✅ COW at cluster granularity, <3 ms |
 
 **One package. Everything included:** vector search, graph queries, GNN learning, distributed clustering, local LLMs, 40+ attention mechanisms, cognitive containers ([RVF](./crates/rvf/README.md) — self-booting `.rvf` files with eBPF, witness chains, and COW branching), and WASM support.
 
