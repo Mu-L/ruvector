@@ -245,7 +245,6 @@ pub fn dynamic_min_cut(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::graph_from_logits;
 
     #[test]
     fn test_dinic_simple_cut() {

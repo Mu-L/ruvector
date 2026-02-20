@@ -1,8 +1,4 @@
 //! Memory, power, and latency profiling for attention-mechanism benchmarks.
-//!
-//! Provides lightweight instrumentation hooks and CSV emitters so that
-//! benchmark harnesses can capture peak RSS, KV-cache sizes, energy
-//! estimates, and tail latencies in a reproducible way.
 
 pub mod config_hash;
 pub mod csv_emitter;

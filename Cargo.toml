@@ -105,7 +105,6 @@ members = [
     "crates/ruvector-solver-node",
     "crates/ruvector-coherence",
     "crates/ruvector-profiler",
-    "crates/ruvector-attn-mincut",
 ]
 resolver = "2"
 
