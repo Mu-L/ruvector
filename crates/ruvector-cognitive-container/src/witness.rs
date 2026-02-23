@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use std::collections::VecDeque;
 
 /// Coherence decision emitted after each epoch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -79,7 +78,7 @@ pub enum VerificationResult {
 pub struct WitnessChain {
     current_epoch: u64,
     prev_hash: [u8; 32],
-    receipts: Vec<ContainerWitnessReceipt>,
+    receipts: VecDeque<ContainerWitnessReceipt>,
     max_receipts: usize,
 }
 
@@ -89,7 +88,7 @@ impl WitnessChain {
         Self {
             current_epoch: 0,
             prev_hash: [0u8; 32],
-            receipts: Vec::with_capacity(max_receipts.min(1024)),
+            receipts: VecDeque::with_capacity(max_receipts.min(1024)),
             max_receipts,
         }
     }
@@ -120,11 +119,11 @@ impl WitnessChain {
         self.prev_hash = receipt.receipt_hash;
         self.current_epoch += 1;
 
-        // Ring-buffer behavior: drop oldest when full.
+        // Ring-buffer behavior: drop oldest when full (O(1) with VecDeque).
         if self.receipts.len() >= self.max_receipts {
-            self.receipts.remove(0);
+            self.receipts.pop_front();
         }
-        self.receipts.push(receipt.clone());
+        self.receipts.push_back(receipt.clone());
 
         receipt
     }
@@ -136,12 +135,12 @@ impl WitnessChain {
 
     /// Most recent receipt, if any.
     pub fn latest_receipt(&self) -> Option<&ContainerWitnessReceipt> {
-        self.receipts.last()
+        self.receipts.back()
     }
 
-    /// Slice of all retained receipts.
-    pub fn receipt_chain(&self) -> &[ContainerWitnessReceipt] {
-        &self.receipts
+    /// All retained receipts as a Vec (for verification / serialization).
+    pub fn receipt_chain(&self) -> Vec<ContainerWitnessReceipt> {
+        self.receipts.iter().cloned().collect()
     }
 
     /// Verify hash-chain integrity and epoch monotonicity for a slice of receipts.
@@ -197,20 +196,122 @@ pub fn deterministic_hash_public(data: &[u8]) -> [u8; 32] {
 
 /// Deterministic hash producing 32 bytes.
 ///
-/// Uses `std::hash::DefaultHasher` (SipHash-2-4) run with four different seeds
-/// to fill 32 bytes. This is NOT cryptographic but fully deterministic across
-/// runs on the same platform.
+/// Uses a fixed-seed SipHash-2-4 with four distinct key pairs to fill 32 bytes.
+/// This is NOT cryptographic but is fully deterministic across Rust versions,
+/// platforms, and runs — unlike `DefaultHasher` which is explicitly unstable
+/// across compiler versions.
 fn deterministic_hash(data: &[u8]) -> [u8; 32] {
+    use std::hash::Hasher;
+
+    // Fixed key pairs — these MUST NOT change or existing witness chains break.
+    const KEYS: [(u64, u64); 4] = [
+        (0x0706050403020100, 0x0f0e0d0c0b0a0908),
+        (0x7a6b5c4d3e2f1001, 0x19283746556473a2),
+        (0xdeadbeefcafebabe, 0x0123456789abcdef),
+        (0xfedcba9876543210, 0xa5a5a5a5a5a5a5a5),
+    ];
+
     let mut result = [0u8; 32];
-    for i in 0u64..4 {
-        let mut hasher = DefaultHasher::new();
-        i.hash(&mut hasher);
-        data.hash(&mut hasher);
+    for (i, &(k0, k1)) in KEYS.iter().enumerate() {
+        let mut hasher = SipHasher::new_with_keys(k0, k1);
+        hasher.write(data);
         let h = hasher.finish();
-        let offset = (i as usize) * 8;
-        result[offset..offset + 8].copy_from_slice(&h.to_le_bytes());
+        result[i * 8..(i + 1) * 8].copy_from_slice(&h.to_le_bytes());
     }
     result
+}
+
+/// Minimal SipHash-2-4 implementation with fixed keys for cross-version stability.
+/// This replaces `DefaultHasher` which is NOT guaranteed stable across Rust versions.
+struct SipHasher {
+    v0: u64,
+    v1: u64,
+    v2: u64,
+    v3: u64,
+    tail: u64,
+    ntail: usize,
+    len: usize,
+}
+
+impl SipHasher {
+    fn new_with_keys(k0: u64, k1: u64) -> Self {
+        Self {
+            v0: k0 ^ 0x736f6d6570736575,
+            v1: k1 ^ 0x646f72616e646f6d,
+            v2: k0 ^ 0x6c7967656e657261,
+            v3: k1 ^ 0x7465646279746573,
+            tail: 0,
+            ntail: 0,
+            len: 0,
+        }
+    }
+
+    #[inline]
+    fn sipround(v0: &mut u64, v1: &mut u64, v2: &mut u64, v3: &mut u64) {
+        *v0 = v0.wrapping_add(*v1); *v1 = v1.rotate_left(13); *v1 ^= *v0; *v0 = v0.rotate_left(32);
+        *v2 = v2.wrapping_add(*v3); *v3 = v3.rotate_left(16); *v3 ^= *v2;
+        *v0 = v0.wrapping_add(*v3); *v3 = v3.rotate_left(21); *v3 ^= *v0;
+        *v2 = v2.wrapping_add(*v1); *v1 = v1.rotate_left(17); *v1 ^= *v2; *v2 = v2.rotate_left(32);
+    }
+}
+
+impl std::hash::Hasher for SipHasher {
+    fn write(&mut self, msg: &[u8]) {
+        let mut needed = 0;
+        let mut i = 0;
+        self.len += msg.len();
+
+        if self.ntail > 0 {
+            needed = 8 - self.ntail;
+            if msg.len() < needed {
+                for &b in msg {
+                    self.tail |= (b as u64) << (self.ntail * 8);
+                    self.ntail += 1;
+                }
+                return;
+            }
+            for j in 0..needed {
+                self.tail |= (msg[j] as u64) << (self.ntail * 8);
+                self.ntail += 1;
+            }
+            self.v3 ^= self.tail;
+            Self::sipround(&mut self.v0, &mut self.v1, &mut self.v2, &mut self.v3);
+            Self::sipround(&mut self.v0, &mut self.v1, &mut self.v2, &mut self.v3);
+            self.v0 ^= self.tail;
+            self.tail = 0;
+            self.ntail = 0;
+            i = needed;
+        }
+
+        while i + 8 <= msg.len() {
+            let m = u64::from_le_bytes([msg[i], msg[i+1], msg[i+2], msg[i+3], msg[i+4], msg[i+5], msg[i+6], msg[i+7]]);
+            self.v3 ^= m;
+            Self::sipround(&mut self.v0, &mut self.v1, &mut self.v2, &mut self.v3);
+            Self::sipround(&mut self.v0, &mut self.v1, &mut self.v2, &mut self.v3);
+            self.v0 ^= m;
+            i += 8;
+        }
+
+        for &b in &msg[i..] {
+            self.tail |= (b as u64) << (self.ntail * 8);
+            self.ntail += 1;
+        }
+    }
+
+    fn finish(&self) -> u64 {
+        let b: u64 = ((self.len as u64) << 56) | self.tail;
+        let (mut v0, mut v1, mut v2, mut v3) = (self.v0, self.v1, self.v2, self.v3);
+        v3 ^= b;
+        Self::sipround(&mut v0, &mut v1, &mut v2, &mut v3);
+        Self::sipround(&mut v0, &mut v1, &mut v2, &mut v3);
+        v0 ^= b;
+        v2 ^= 0xff;
+        Self::sipround(&mut v0, &mut v1, &mut v2, &mut v3);
+        Self::sipround(&mut v0, &mut v1, &mut v2, &mut v3);
+        Self::sipround(&mut v0, &mut v1, &mut v2, &mut v3);
+        Self::sipround(&mut v0, &mut v1, &mut v2, &mut v3);
+        v0 ^ v1 ^ v2 ^ v3
+    }
 }
 
 #[cfg(test)]
@@ -248,7 +349,7 @@ mod tests {
 
         assert_eq!(chain.current_epoch(), 5);
 
-        match WitnessChain::verify_chain(chain.receipt_chain()) {
+        match WitnessChain::verify_chain(&chain.receipt_chain()) {
             VerificationResult::Valid {
                 chain_length,
                 first_epoch,

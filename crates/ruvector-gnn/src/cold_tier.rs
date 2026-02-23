@@ -116,10 +116,8 @@ impl FeatureStorage {
         let file = self.file.as_mut().ok_or_else(|| GnnError::other("file not open"))?;
         let offset = HEADER_SIZE + (node_id as u64) * (self.block_size as u64);
         file.seek(SeekFrom::Start(offset))?;
-        let bytes: &[u8] = unsafe {
-            std::slice::from_raw_parts(features.as_ptr() as *const u8, features.len() * F32_SIZE)
-        };
-        file.write_all(bytes)?;
+        let bytes: Vec<u8> = features.iter().flat_map(|f| f.to_le_bytes()).collect();
+        file.write_all(&bytes)?;
         Ok(())
     }
 
@@ -274,9 +272,9 @@ impl HyperbatchIterator {
         let node_ids: Vec<usize> = self.node_order[self.current_offset..end].to_vec();
         let features = self.storage.read_batch(&node_ids).ok()?;
 
-        // Store in active buffer for potential re-use
+        // Store in active buffer for potential re-use, then return reference-clone.
         let buf_idx = self.active_buffer % self.buffers.len();
-        self.buffers[buf_idx] = features.clone();
+        self.buffers[buf_idx] = features;
         self.active_buffer += 1;
 
         let batch_index = self.batch_counter;
@@ -285,7 +283,7 @@ impl HyperbatchIterator {
 
         Some(HyperbatchResult {
             node_ids,
-            features,
+            features: self.buffers[buf_idx].clone(),
             batch_index,
         })
     }

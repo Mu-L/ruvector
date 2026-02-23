@@ -431,26 +431,27 @@ impl CactusGraph {
             return (f64::INFINITY, Vec::new());
         }
 
-        // Build compact index mapping using Vec instead of HashMap
+        // Build compact index mapping.
+        // Use HashMap to avoid OOM on sparse vertex IDs (e.g. id=1_000_000 in a 10-node graph).
         let node_ids: Vec<usize> = {
             let mut v: Vec<usize> = adj.keys().copied().collect();
             v.sort_unstable();
             v
         };
 
-        let max_id = *node_ids.last().unwrap();
-        let mut id_to_idx = vec![usize::MAX; max_id + 1];
-        for (i, &nid) in node_ids.iter().enumerate() {
-            id_to_idx[nid] = i;
-        }
+        let id_to_idx: std::collections::HashMap<usize, usize> = node_ids
+            .iter()
+            .enumerate()
+            .map(|(i, &nid)| (nid, i))
+            .collect();
 
         // Flat weight matrix (dense, row-major, contiguous allocation)
         let mut w: Vec<f64> = vec![0.0; n * n];
         for (&u, nbrs) in adj {
-            let ui = id_to_idx[u];
+            let ui = id_to_idx[&u];
             let row = ui * n;
             for (&v, &wt) in nbrs {
-                let vi = id_to_idx[v];
+                let vi = id_to_idx[&v];
                 w[row + vi] = wt;
             }
         }
@@ -932,27 +933,69 @@ impl CactusGraph {
         cut_edges
     }
 
-    /// Compute a deterministic canonical key from a partition using SipHash.
+    /// Compute a deterministic canonical fingerprint from a partition.
+    ///
+    /// Uses a fixed-seed SipHash-2-4 (NOT `DefaultHasher`, which is unstable
+    /// across Rust compiler versions). The result is a 32-byte fingerprint
+    /// for audit trails and reproducibility — NOT cryptographic.
     fn compute_canonical_key(partition: &[usize]) -> [u8; 32] {
+        use std::hash::Hasher;
+
         let mut sorted = partition.to_vec();
         sorted.sort_unstable();
 
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        sorted.hash(&mut hasher);
-        let hash1 = hasher.finish();
-
-        let mut hasher2 = std::collections::hash_map::DefaultHasher::new();
-        sorted.len().hash(&mut hasher2);
-        for &v in &sorted {
-            v.hash(&mut hasher2);
+        // Fixed SipHash keys — must never change or existing canonical keys break.
+        fn sip(k0: u64, k1: u64, data: &[u8]) -> u64 {
+            // Inline minimal SipHash-2-4 finalization.
+            let mut v0 = k0 ^ 0x736f6d6570736575;
+            let mut v1 = k1 ^ 0x646f72616e646f6d;
+            let mut v2 = k0 ^ 0x6c7967656e657261;
+            let mut v3 = k1 ^ 0x7465646279746573;
+            let blocks = data.len() / 8;
+            for i in 0..blocks {
+                let off = i * 8;
+                let m = u64::from_le_bytes([data[off], data[off+1], data[off+2], data[off+3],
+                                            data[off+4], data[off+5], data[off+6], data[off+7]]);
+                v3 ^= m;
+                for _ in 0..2 {
+                    v0 = v0.wrapping_add(v1); v1 = v1.rotate_left(13); v1 ^= v0; v0 = v0.rotate_left(32);
+                    v2 = v2.wrapping_add(v3); v3 = v3.rotate_left(16); v3 ^= v2;
+                    v0 = v0.wrapping_add(v3); v3 = v3.rotate_left(21); v3 ^= v0;
+                    v2 = v2.wrapping_add(v1); v1 = v1.rotate_left(17); v1 ^= v2; v2 = v2.rotate_left(32);
+                }
+                v0 ^= m;
+            }
+            let mut tail: u64 = (data.len() as u64) << 56;
+            let rem = data.len() % 8;
+            let base = blocks * 8;
+            for j in 0..rem {
+                tail |= (data[base + j] as u64) << (j * 8);
+            }
+            v3 ^= tail;
+            for _ in 0..2 {
+                v0 = v0.wrapping_add(v1); v1 = v1.rotate_left(13); v1 ^= v0; v0 = v0.rotate_left(32);
+                v2 = v2.wrapping_add(v3); v3 = v3.rotate_left(16); v3 ^= v2;
+                v0 = v0.wrapping_add(v3); v3 = v3.rotate_left(21); v3 ^= v0;
+                v2 = v2.wrapping_add(v1); v1 = v1.rotate_left(17); v1 ^= v2; v2 = v2.rotate_left(32);
+            }
+            v0 ^= tail;
+            v2 ^= 0xff;
+            for _ in 0..4 {
+                v0 = v0.wrapping_add(v1); v1 = v1.rotate_left(13); v1 ^= v0; v0 = v0.rotate_left(32);
+                v2 = v2.wrapping_add(v3); v3 = v3.rotate_left(16); v3 ^= v2;
+                v0 = v0.wrapping_add(v3); v3 = v3.rotate_left(21); v3 ^= v0;
+                v2 = v2.wrapping_add(v1); v1 = v1.rotate_left(17); v1 ^= v2; v2 = v2.rotate_left(32);
+            }
+            v0 ^ v1 ^ v2 ^ v3
         }
-        let hash2 = hasher2.finish();
 
-        // Fill 32 bytes from two 64-bit hashes, repeated with mixing
+        let bytes: Vec<u8> = sorted.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let hash1 = sip(0x0706050403020100, 0x0f0e0d0c0b0a0908, &bytes);
+        let hash2 = sip(0xdeadbeefcafebabe, 0x0123456789abcdef, &bytes);
+
         let mut key = [0u8; 32];
         key[0..8].copy_from_slice(&hash1.to_le_bytes());
         key[8..16].copy_from_slice(&hash2.to_le_bytes());
-        // Mix for bytes 16..32
         let mixed1 = hash1.wrapping_mul(0x517cc1b727220a95) ^ hash2;
         let mixed2 = hash2.wrapping_mul(0x6c62272e07bb0142) ^ hash1;
         key[16..24].copy_from_slice(&mixed1.to_le_bytes());
@@ -1050,15 +1093,19 @@ pub trait CanonicalMinCut {
 /// Wraps an inner `DynamicMinCut` and lazily builds a `CactusGraph`
 /// when the canonical cut is requested. The cactus is invalidated on
 /// any structural change (edge insert / delete).
+///
+/// Uses `RefCell` for the cactus cache so that the `&self` trait methods
+/// can update the cache without requiring `&mut self`.
 pub struct CanonicalMinCutImpl {
     /// Underlying dynamic min-cut engine.
     inner: algorithm::DynamicMinCut,
-    /// Cached cactus graph (rebuilt when dirty).
-    cactus: Option<CactusGraph>,
+    /// Cached cactus graph (rebuilt when dirty). Uses RefCell for interior
+    /// mutability so `canonical_cut(&self)` can update the cache.
+    cactus: std::cell::RefCell<Option<CactusGraph>>,
     /// Logical epoch counter, incremented on each mutation.
     epoch: u64,
     /// Whether the cached cactus is stale.
-    dirty: bool,
+    dirty: std::cell::Cell<bool>,
 }
 
 impl CanonicalMinCutImpl {
@@ -1066,9 +1113,9 @@ impl CanonicalMinCutImpl {
     pub fn from_dynamic(inner: algorithm::DynamicMinCut) -> Self {
         Self {
             inner,
-            cactus: None,
+            cactus: std::cell::RefCell::new(None),
             epoch: 0,
-            dirty: true,
+            dirty: std::cell::Cell::new(true),
         }
     }
 
@@ -1076,9 +1123,9 @@ impl CanonicalMinCutImpl {
     pub fn new() -> Self {
         Self {
             inner: algorithm::DynamicMinCut::new(MinCutConfig::default()),
-            cactus: None,
+            cactus: std::cell::RefCell::new(None),
             epoch: 0,
-            dirty: true,
+            dirty: std::cell::Cell::new(true),
         }
     }
 
@@ -1090,15 +1137,15 @@ impl CanonicalMinCutImpl {
             .build()?;
         Ok(Self {
             inner,
-            cactus: None,
+            cactus: std::cell::RefCell::new(None),
             epoch: 0,
-            dirty: true,
+            dirty: std::cell::Cell::new(true),
         })
     }
 
-    /// Ensure the cactus is up to date.
-    fn ensure_cactus(&mut self) {
-        if !self.dirty && self.cactus.is_some() {
+    /// Ensure the cactus is up to date (uses interior mutability).
+    fn ensure_cactus(&self) {
+        if !self.dirty.get() && self.cactus.borrow().is_some() {
             return;
         }
 
@@ -1107,8 +1154,8 @@ impl CanonicalMinCutImpl {
         let mut cactus = CactusGraph::build_from_graph(&g);
         drop(g);
         cactus.root_at_lex_smallest();
-        self.cactus = Some(cactus);
-        self.dirty = false;
+        *self.cactus.borrow_mut() = Some(cactus);
+        self.dirty.set(false);
     }
 }
 
@@ -1120,39 +1167,18 @@ impl Default for CanonicalMinCutImpl {
 
 impl CanonicalMinCut for CanonicalMinCutImpl {
     fn canonical_cut(&self) -> CanonicalCutResult {
-        // We need a mutable borrow to ensure the cactus, but the trait
-        // signature is &self. Work around by using interior mutability
-        // pattern (rebuild inline if needed).
-        let graph = self.inner.graph();
-        let g = graph.read();
+        // Use interior mutability: ensure_cactus updates the RefCell cache.
+        self.ensure_cactus();
 
-        if let Some(ref cactus) = self.cactus {
-            if !self.dirty {
-                return cactus.canonical_cut();
-            }
-        }
-
-        // Rebuild
-        let mut cactus = CactusGraph::build_from_graph(&g);
-        drop(g);
-        cactus.root_at_lex_smallest();
-        cactus.canonical_cut()
+        let cache = self.cactus.borrow();
+        cache.as_ref().expect("ensure_cactus guarantees Some").canonical_cut()
     }
 
     fn cactus_graph(&self) -> CactusGraph {
-        let graph = self.inner.graph();
-        let g = graph.read();
+        self.ensure_cactus();
 
-        if let Some(ref cactus) = self.cactus {
-            if !self.dirty {
-                return cactus.clone();
-            }
-        }
-
-        let mut cactus = CactusGraph::build_from_graph(&g);
-        drop(g);
-        cactus.root_at_lex_smallest();
-        cactus
+        let cache = self.cactus.borrow();
+        cache.as_ref().expect("ensure_cactus guarantees Some").clone()
     }
 
     fn witness_receipt(&self) -> WitnessReceipt {
@@ -1174,16 +1200,16 @@ impl CanonicalMinCut for CanonicalMinCutImpl {
     fn insert_edge(&mut self, u: VertexId, v: VertexId, weight: Weight) -> crate::Result<f64> {
         let val = self.inner.insert_edge(u, v, weight)?;
         self.epoch += 1;
-        self.dirty = true;
-        self.cactus = None;
+        self.dirty.set(true);
+        *self.cactus.borrow_mut() = None;
         Ok(val)
     }
 
     fn delete_edge(&mut self, u: VertexId, v: VertexId) -> crate::Result<f64> {
         let val = self.inner.delete_edge(u, v)?;
         self.epoch += 1;
-        self.dirty = true;
-        self.cactus = None;
+        self.dirty.set(true);
+        *self.cactus.borrow_mut() = None;
         Ok(val)
     }
 

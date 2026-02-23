@@ -143,8 +143,6 @@ pub struct ContainerSnapshot {
 /// evidence, and witness phases within a memory slab and epoch budget.
 pub struct CognitiveContainer {
     config: ContainerConfig,
-    #[allow(dead_code)]
-    slab: MemorySlab,
     epoch: EpochController,
     witness: WitnessChain,
     graph: GraphState,
@@ -156,13 +154,13 @@ pub struct CognitiveContainer {
 impl CognitiveContainer {
     /// Create and initialize a new container.
     pub fn new(config: ContainerConfig) -> Result<Self> {
-        let slab = MemorySlab::new(config.memory.clone())?;
+        // Validate memory config but don't allocate unused slab.
+        let _validate = MemorySlab::new(config.memory.clone())?;
         let epoch = EpochController::new(config.epoch_budget.clone());
         let witness = WitnessChain::new(config.max_receipts);
 
         Ok(Self {
             config,
-            slab,
             epoch,
             witness,
             graph: GraphState::new(),
@@ -246,14 +244,14 @@ impl CognitiveContainer {
         self.witness.current_epoch()
     }
 
-    /// Slice of all retained witness receipts.
-    pub fn receipt_chain(&self) -> &[ContainerWitnessReceipt] {
+    /// All retained witness receipts.
+    pub fn receipt_chain(&self) -> Vec<ContainerWitnessReceipt> {
         self.witness.receipt_chain()
     }
 
     /// Verify the integrity of the internal witness chain.
     pub fn verify_chain(&self) -> VerificationResult {
-        WitnessChain::verify_chain(self.witness.receipt_chain())
+        WitnessChain::verify_chain(&self.witness.receipt_chain())
     }
 
     /// Produce a serializable snapshot of the current container state.
@@ -296,9 +294,12 @@ impl CognitiveContainer {
         }
     }
 
-    /// Simplified Stoer-Wagner-style min-cut: find the minimum total weight
-    /// among all vertex partitions. For small graphs this uses the minimum
-    /// weighted vertex degree as a fast approximation.
+    /// Fast min-cut approximation using minimum weighted vertex degree.
+    ///
+    /// **Note**: This is an upper bound on the true min-cut, NOT exact Stoer-Wagner.
+    /// For exact canonical min-cuts, use `ruvector_mincut::canonical::CanonicalMinCutImpl`.
+    /// The SCS (Spectral Coherence Score) derived from this is conservative — it may
+    /// report lower coherence than reality but will never report higher.
     fn recompute_mincut(&mut self) {
         if self.graph.edges.is_empty() {
             self.graph.min_cut_value = 0.0;
