@@ -7548,6 +7548,7 @@ dependencies = [
  "proptest",
  "rand 0.8.5",
  "rayon",
+ "ruqu-core",
  "ruvector-mincut 0.1.30",
  "ruvector-mincut-gated-transformer 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
