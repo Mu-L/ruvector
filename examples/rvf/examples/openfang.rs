@@ -1,30 +1,27 @@
-//! OpenFang Agent OS — RVF Knowledge Base
+//! OpenFang Agent OS — RVF Knowledge Base (Full Surface)
 //!
-//! A deep integration example that exercises the full RVF capability surface
-//! using OpenFang's agent registry as the domain model.
-//!
-//! Capabilities demonstrated:
-//!   - Multi-type registry (Hands, Tools, Channels) in one vector space
-//!   - Rich metadata with typed fields and combined filter expressions
-//!   - Task routing via nearest-neighbor search
-//!   - Security and tier filtering
-//!   - Delete + compact lifecycle (decommission an agent, reclaim space)
-//!   - COW branching + freeze (staging branch for experimental agents)
-//!   - File identity and lineage tracking (parent/child provenance)
-//!   - Audited queries (witness entries for every search)
-//!   - Segment directory inspection
-//!   - Cryptographic witness chain with verification
-//!   - Persistence round-trip
+//! Exercises **every major RVF capability** against a realistic agent-OS
+//! registry: vector ingestion, filtered queries, quality envelopes, audited
+//! queries, delete + compact, lineage derivation, COW branching, segment
+//! embedding (WASM, kernel, eBPF, dashboard), membership filters, DoS
+//! hardening, adversarial detection, AGI container packaging, file identity,
+//! segment directory, witness chain, and persistence.
 //!
 //! Run with:
 //!   cargo run --example openfang
 
+use std::time::Duration;
+
 use rvf_crypto::{create_witness_chain, shake256_256, verify_witness_chain, WitnessEntry};
+use rvf_runtime::adversarial::{centroid_distance_cv, is_degenerate_distribution};
 use rvf_runtime::filter::FilterValue;
 use rvf_runtime::options::DistanceMetric;
 use rvf_runtime::{
-    FilterExpr, MetadataEntry, MetadataValue, QueryOptions, RvfOptions, RvfStore, SearchResult,
+    AgiContainerBuilder, BudgetTokenBucket, FilterExpr, MembershipFilter, MetadataEntry,
+    MetadataValue, NegativeCache, ParsedAgiManifest, ProofOfWork, QueryOptions, QuerySignature,
+    RvfOptions, RvfStore, SearchResult,
 };
+use rvf_types::agi_container::ContainerSegments;
 use rvf_types::DerivationType;
 use tempfile::TempDir;
 
@@ -35,12 +32,11 @@ use tempfile::TempDir;
 const DIM: usize = 128;
 const K: usize = 5;
 
-// Metadata field IDs — shared across all component types.
-const F_TYPE: u16 = 0; // "hand" | "tool" | "channel"
+const F_TYPE: u16 = 0;
 const F_NAME: u16 = 1;
-const F_DOMAIN: u16 = 2; // domain (hand), category (tool), protocol (channel)
-const F_TIER: u16 = 3; // hand only: 1-4
-const F_SEC: u16 = 4; // hand only: 0-100
+const F_DOMAIN: u16 = 2;
+const F_TIER: u16 = 3;
+const F_SEC: u16 = 4;
 
 // ---------------------------------------------------------------------------
 // Data definitions
@@ -186,7 +182,7 @@ fn witness(entries: &mut Vec<WitnessEntry>, action: &str, ts_ns: u64, wtype: u8)
 }
 
 // ---------------------------------------------------------------------------
-// Registry — tracks ID ranges for component lookup.
+// Registry
 // ---------------------------------------------------------------------------
 
 struct Registry {
@@ -233,7 +229,7 @@ fn print_results(results: &[SearchResult], reg: &Registry) {
 // ---------------------------------------------------------------------------
 
 fn main() {
-    println!("=== OpenFang Agent OS — RVF Knowledge Base ===\n");
+    println!("=== OpenFang Agent OS — RVF Full Surface Demo ===\n");
 
     let reg = Registry::new();
     let tmp = TempDir::new().expect("tmpdir");
@@ -285,7 +281,7 @@ fn main() {
     witness(&mut wit, &format!("REGISTER_HANDS:{}", HANDS.len()), 1_709_000_000_000_000_000, 0x01);
 
     // -----------------------------------------------------------------------
-    // 3. Register Tools (per-category bias)
+    // 3. Register Tools
     // -----------------------------------------------------------------------
     println!("\n--- 3. Register Tools ({}) ---", TOOLS.len());
     {
@@ -358,83 +354,269 @@ fn main() {
     witness(&mut wit, "ROUTE_TASK:k=5", 1_709_000_010_000_000_000, 0x02);
 
     // -----------------------------------------------------------------------
-    // 6. Security filter (>= 80)
+    // 6. Quality envelope query
     // -----------------------------------------------------------------------
-    println!("\n--- 6. High-Security Hands (sec >= 80) ---");
-    let sec_opts = QueryOptions {
+    println!("\n--- 6. Quality Envelope ---");
+    let envelope = store.query_with_envelope(&query, K, &QueryOptions::default())
+        .expect("envelope query");
+    println!("  Quality: {:?}", envelope.quality);
+    println!("  HNSW candidates: {}", envelope.evidence.hnsw_candidate_count);
+    println!("  Safety-net candidates: {}", envelope.evidence.safety_net_candidate_count);
+    println!("  Budget total_us: {}", envelope.budgets.total_us);
+    println!("  Results: {} (top match: id={}, d={:.4})",
+        envelope.results.len(),
+        envelope.results.first().map_or(0, |r| r.id),
+        envelope.results.first().map_or(0.0, |r| r.distance));
+    witness(&mut wit, "QUERY_ENVELOPE:k=5", 1_709_000_011_000_000_000, 0x02);
+
+    // -----------------------------------------------------------------------
+    // 7. Audited query (auto-appends witness)
+    // -----------------------------------------------------------------------
+    println!("\n--- 7. Audited Query ---");
+    let audited = store.query_audited(&query, K, &QueryOptions::default())
+        .expect("audited query");
+    println!("  Returned {} results (witness auto-appended to store)", audited.len());
+    println!("  Store witness hash: {}", hex(&store.last_witness_hash()[..8]));
+    witness(&mut wit, "QUERY_AUDITED:k=5", 1_709_000_012_000_000_000, 0x02);
+
+    // -----------------------------------------------------------------------
+    // 8. Security + tier filters
+    // -----------------------------------------------------------------------
+    println!("\n--- 8. Security Filter (sec >= 80) ---");
+    let sec_res = store.query(&query, K, &QueryOptions {
         filter: Some(FilterExpr::And(vec![
             FilterExpr::Eq(F_TYPE, FilterValue::String("hand".into())),
             FilterExpr::Ge(F_SEC, FilterValue::U64(80)),
         ])),
         ..Default::default()
-    };
-    let sec_res = store.query(&query, K, &sec_opts).expect("sec query");
+    }).expect("sec query");
     print_results(&sec_res, &reg);
     println!("  {} agents pass threshold", sec_res.len());
 
-    // -----------------------------------------------------------------------
-    // 7. Autonomous tier-4 agents
-    // -----------------------------------------------------------------------
-    println!("\n--- 7. Tier-4 Autonomous Agents ---");
-    let tier_opts = QueryOptions {
+    println!("\n--- 9. Tier-4 Autonomous Agents ---");
+    let tier_res = store.query(&query, K, &QueryOptions {
         filter: Some(FilterExpr::And(vec![
             FilterExpr::Eq(F_TYPE, FilterValue::String("hand".into())),
             FilterExpr::Eq(F_TIER, FilterValue::U64(4)),
         ])),
         ..Default::default()
-    };
-    let tier_res = store.query(&query, K, &tier_opts).expect("tier query");
+    }).expect("tier query");
     print_results(&tier_res, &reg);
 
-    // -----------------------------------------------------------------------
-    // 8. Tool discovery by category
-    // -----------------------------------------------------------------------
-    println!("\n--- 8. Security Tool Discovery ---");
-    let tool_opts = QueryOptions {
+    println!("\n--- 10. Security Tool Discovery ---");
+    let tool_res = store.query(&query, 10, &QueryOptions {
         filter: Some(FilterExpr::And(vec![
             FilterExpr::Eq(F_TYPE, FilterValue::String("tool".into())),
             FilterExpr::Eq(F_DOMAIN, FilterValue::String("security".into())),
         ])),
         ..Default::default()
-    };
-    let tool_res = store.query(&query, 10, &tool_opts).expect("tool query");
+    }).expect("tool query");
     print_results(&tool_res, &reg);
 
     // -----------------------------------------------------------------------
-    // 9. Delete + Compact — decommission the "twitter" hand
+    // 11. Membership filter — multi-tenant isolation
     // -----------------------------------------------------------------------
-    println!("\n--- 9. Delete + Compact (decommission 'twitter') ---");
+    println!("\n--- 11. Membership Filter (tenant isolation) ---");
+    {
+        let mut mf = MembershipFilter::new_include(reg.total());
+        // Tenant A can only see tools (IDs 7..44)
+        for id in reg.tool_base..reg.tool_base + reg.tool_count {
+            mf.add(id);
+        }
+        println!("  Created include-mode filter: {} members of {} total",
+            mf.member_count(), reg.total());
+        println!("  Mode: {:?}, generation: {}", mf.mode(), mf.generation_id());
+
+        // Verify containment
+        let hand_visible = mf.contains(0); // clip hand
+        let tool_visible = mf.contains(reg.tool_base); // http_fetch tool
+        println!("  Hand 'clip' visible: {}  (expect false)", hand_visible);
+        println!("  Tool 'http_fetch' visible: {}  (expect true)", tool_visible);
+        assert!(!hand_visible);
+        assert!(tool_visible);
+
+        let serialized = mf.serialize();
+        println!("  Serialized filter: {} bytes", serialized.len());
+    }
+    witness(&mut wit, "MEMBERSHIP_FILTER:tenant", 1_709_000_015_000_000_000, 0x01);
+
+    // -----------------------------------------------------------------------
+    // 12. DoS hardening — token bucket + negative cache + proof-of-work
+    // -----------------------------------------------------------------------
+    println!("\n--- 12. DoS Hardening ---");
+    {
+        // Token bucket: 1000 ops per second
+        let mut bucket = BudgetTokenBucket::new(1000, Duration::from_secs(1));
+        let cost = (K as u64) * (reg.total()); // k * N distance ops
+        match bucket.try_consume(cost) {
+            Ok(remaining) => println!("  Token bucket: consumed {} ops, {} remaining", cost, remaining),
+            Err(deficit) => println!("  Token bucket: REJECTED (need {} more tokens)", deficit),
+        }
+
+        // Query signature + negative cache
+        let sig = QuerySignature::from_query(&query);
+        let mut neg_cache = NegativeCache::new(3, Duration::from_secs(60), 1000);
+        let bl1 = neg_cache.record_degenerate(sig);
+        let bl2 = neg_cache.record_degenerate(sig);
+        let bl3 = neg_cache.record_degenerate(sig); // 3rd hit -> blacklisted
+        println!("  Negative cache: hit1={} hit2={} hit3(blacklist)={}", bl1, bl2, bl3);
+        println!("  Signature blacklisted: {}", neg_cache.is_blacklisted(&sig));
+
+        // Proof-of-work
+        let pow = ProofOfWork {
+            challenge: [0x4F, 0x50, 0x45, 0x4E, 0x46, 0x41, 0x4E, 0x47, // "OPENFANG"
+                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+            difficulty: 8,
+        };
+        match pow.solve() {
+            Some(nonce) => {
+                let valid = pow.verify(nonce);
+                println!("  PoW (d=8): solved nonce={}, valid={}", nonce, valid);
+            }
+            None => println!("  PoW: no solution found within limit"),
+        }
+    }
+    witness(&mut wit, "DOS_HARDENING:bucket+cache+pow", 1_709_000_016_000_000_000, 0x01);
+
+    // -----------------------------------------------------------------------
+    // 13. Adversarial detection
+    // -----------------------------------------------------------------------
+    println!("\n--- 13. Adversarial Detection ---");
+    {
+        // Natural distances — extract from query results
+        let natural: Vec<f32> = all.iter().map(|r| r.distance).collect();
+        let cv_natural = centroid_distance_cv(&natural, K);
+        let degen_natural = is_degenerate_distribution(&natural, K);
+        println!("  Natural query distances: {:?}", natural.iter().map(|d| format!("{:.2}", d)).collect::<Vec<_>>());
+        println!("  CV={:.4}, degenerate={}", cv_natural, degen_natural);
+
+        // Adversarial — uniform distances (attack vector)
+        let uniform = vec![5.0f32; 100];
+        let cv_uniform = centroid_distance_cv(&uniform, K);
+        let degen_uniform = is_degenerate_distribution(&uniform, K);
+        println!("  Uniform distances (simulated attack):");
+        println!("  CV={:.4}, degenerate={}", cv_uniform, degen_uniform);
+        assert!(degen_uniform, "uniform should be degenerate");
+    }
+    witness(&mut wit, "ADVERSARIAL:detect", 1_709_000_017_000_000_000, 0x02);
+
+    // -----------------------------------------------------------------------
+    // 14. Embed WASM module (query engine microkernel)
+    // -----------------------------------------------------------------------
+    println!("\n--- 14. Embed WASM Module ---");
+    let fake_wasm = b"\x00asm\x01\x00\x00\x00"; // minimal WASM header
+    let wasm_seg = store.embed_wasm(
+        0x02,   // role: Microkernel
+        0x01,   // target: wasm32
+        0x0000, // no required features
+        fake_wasm,
+        1,      // export_count
+        1,      // bootstrap_priority
+        0,      // interpreter_type
+    ).expect("embed wasm");
+    println!("  Embedded WASM microkernel: seg_id={}, {} bytes", wasm_seg, fake_wasm.len());
+    println!("  Self-bootstrapping: {}", store.is_self_bootstrapping());
+
+    // Extract and verify round-trip
+    let (hdr, bytecode) = store.extract_wasm().expect("extract wasm").expect("wasm present");
+    println!("  Extracted: header={} bytes, bytecode={} bytes", hdr.len(), bytecode.len());
+    assert_eq!(&bytecode, fake_wasm);
+    witness(&mut wit, "EMBED_WASM:microkernel", 1_709_000_018_000_000_000, 0x01);
+
+    // -----------------------------------------------------------------------
+    // 15. Embed kernel image
+    // -----------------------------------------------------------------------
+    println!("\n--- 15. Embed Kernel ---");
+    let fake_kernel = b"bzImage-openfang-v1.0-minimal";
+    let kern_seg = store.embed_kernel(
+        0x01,   // arch: x86_64
+        0x01,   // kernel_type: linux
+        0x0000, // flags
+        fake_kernel,
+        8080,   // api_port
+        Some("console=ttyS0 root=/dev/vda rw"),
+    ).expect("embed kernel");
+    println!("  Embedded kernel: seg_id={}, {} bytes, port=8080", kern_seg, fake_kernel.len());
+
+    let (khdr, kpayload) = store.extract_kernel().expect("extract kernel").expect("kernel present");
+    println!("  Extracted: header={} bytes, payload={} bytes", khdr.len(), kpayload.len());
+    // Payload contains cmdline + image; verify image bytes are present
+    assert!(kpayload.windows(fake_kernel.len()).any(|w| w == fake_kernel),
+        "kernel image not found in extracted payload");
+    witness(&mut wit, "EMBED_KERNEL:linux", 1_709_000_019_000_000_000, 0x01);
+
+    // -----------------------------------------------------------------------
+    // 16. Embed eBPF program
+    // -----------------------------------------------------------------------
+    println!("\n--- 16. Embed eBPF ---");
+    // 8 bytes = 1 eBPF instruction (mov64 r0, 0; exit)
+    let fake_ebpf = &[0xb7, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00u8,
+                       0x95, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    let ebpf_seg = store.embed_ebpf(
+        0x01,       // program_type: socket_filter
+        0x01,       // attach_type: ingress
+        DIM as u16, // max_dimension
+        fake_ebpf,
+        None,       // no BTF
+    ).expect("embed ebpf");
+    println!("  Embedded eBPF: seg_id={}, {} bytes (2 insns)", ebpf_seg, fake_ebpf.len());
+
+    let (ehdr, eprog) = store.extract_ebpf().expect("extract ebpf").expect("ebpf present");
+    println!("  Extracted: header={} bytes, program={} bytes", ehdr.len(), eprog.len());
+    assert_eq!(&eprog, fake_ebpf);
+    witness(&mut wit, "EMBED_EBPF:filter", 1_709_000_019_500_000_000, 0x01);
+
+    // -----------------------------------------------------------------------
+    // 17. Embed dashboard
+    // -----------------------------------------------------------------------
+    println!("\n--- 17. Embed Dashboard ---");
+    let dashboard_html = br#"<!DOCTYPE html>
+<html><head><title>OpenFang Registry</title></head>
+<body><h1>OpenFang Agent Registry Dashboard</h1>
+<p>7 Hands | 38 Tools | 20 Channels</p></body></html>"#;
+    let dash_seg = store.embed_dashboard(
+        0x01, // ui_framework: vanilla HTML
+        dashboard_html,
+        "index.html",
+    ).expect("embed dashboard");
+    println!("  Embedded dashboard: seg_id={}, {} bytes", dash_seg, dashboard_html.len());
+
+    let (dhdr, dbundle) = store.extract_dashboard().expect("extract dash").expect("dash present");
+    println!("  Extracted: header={} bytes, bundle={} bytes", dhdr.len(), dbundle.len());
+    assert_eq!(&dbundle, dashboard_html);
+    witness(&mut wit, "EMBED_DASHBOARD:html", 1_709_000_019_800_000_000, 0x01);
+
+    // -----------------------------------------------------------------------
+    // 18. Delete + Compact
+    // -----------------------------------------------------------------------
+    println!("\n--- 18. Delete + Compact (decommission 'twitter') ---");
     let twitter_id = HANDS.iter().position(|h| h.name == "twitter").unwrap() as u64 + reg.hand_base;
     let st_before = store.status();
-    println!("  Before: {} vectors, {} bytes, dead_ratio={:.2}",
+    println!("  Before: {} vectors, {} bytes, dead={:.2}",
         st_before.total_vectors, st_before.file_size, st_before.dead_space_ratio);
 
-    let del = store.delete(&[twitter_id]).expect("delete twitter");
+    let del = store.delete(&[twitter_id]).expect("delete");
     println!("  Deleted {} vector(s) (epoch {})", del.deleted, del.epoch);
-
-    let st_mid = store.status();
-    println!("  After delete: {} vectors, dead_ratio={:.2}", st_mid.total_vectors, st_mid.dead_space_ratio);
 
     let comp = store.compact().expect("compact");
     println!("  Compacted: {} segments, {} bytes reclaimed (epoch {})",
         comp.segments_compacted, comp.bytes_reclaimed, comp.epoch);
 
     let st_after = store.status();
-    println!("  After compact: {} vectors, {} bytes, dead_ratio={:.2}",
+    println!("  After: {} vectors, {} bytes, dead={:.2}",
         st_after.total_vectors, st_after.file_size, st_after.dead_space_ratio);
 
-    // Verify twitter is gone from hand queries
-    let post_del = store.query(&query, K, &hands_only).expect("post-delete query");
+    let post_del = store.query(&query, K, &hands_only).expect("post-delete");
     for r in &post_del {
         assert_ne!(r.id, twitter_id, "twitter should be deleted");
     }
-    println!("  Verified: 'twitter' no longer appears in results");
+    println!("  Verified: 'twitter' absent from results");
     witness(&mut wit, "DELETE+COMPACT:twitter", 1_709_000_020_000_000_000, 0x01);
 
     // -----------------------------------------------------------------------
-    // 10. Derive — create a snapshot with lineage tracking
+    // 19. Derive (lineage snapshot)
     // -----------------------------------------------------------------------
-    println!("\n--- 10. Derive (Snapshot with Lineage) ---");
+    println!("\n--- 19. Derive (Lineage Snapshot) ---");
     let parent_fid = hex(&store.file_id()[..8]);
     let parent_depth = store.lineage_depth();
 
@@ -443,30 +625,26 @@ fn main() {
     let child_parent = hex(&child.parent_id()[..8]);
     let child_depth = child.lineage_depth();
 
-    println!("  Parent:  file_id={}  depth={}", parent_fid, parent_depth);
-    println!("  Child:   file_id={}  depth={}", child_fid, child_depth);
-    println!("  Child parent_id={} (matches parent: {})", child_parent, child_parent == parent_fid);
-    assert_eq!(child_depth, parent_depth + 1, "depth should increment");
-
-    let child_st = child.status();
-    println!("  Child vectors: {}, segments: {}", child_st.total_vectors, child_st.total_segments);
+    println!("  Parent:  fid={}  depth={}", parent_fid, parent_depth);
+    println!("  Child:   fid={}  depth={}", child_fid, child_depth);
+    println!("  Lineage: parent_id matches = {}", child_parent == parent_fid);
+    assert_eq!(child_depth, parent_depth + 1);
     child.close().expect("close child");
     witness(&mut wit, "DERIVE:snapshot", 1_709_000_030_000_000_000, 0x01);
 
     // -----------------------------------------------------------------------
-    // 11. COW Branch — staging environment for experimental agents
+    // 20. COW Branch + freeze
     // -----------------------------------------------------------------------
-    println!("\n--- 11. COW Branch (Staging Environment) ---");
-    store.freeze().expect("freeze parent");
-    println!("  Parent frozen (read-only)");
+    println!("\n--- 20. COW Branch (Staging) ---");
+    store.freeze().expect("freeze");
+    println!("  Parent frozen");
 
     let mut staging = store.branch(&branch_path).expect("branch");
-    println!("  Branch created: is_cow_child={}", staging.is_cow_child());
+    println!("  Branch: cow_child={}", staging.is_cow_child());
     if let Some(stats) = staging.cow_stats() {
-        println!("  COW stats: {} clusters, {} local", stats.cluster_count, stats.local_cluster_count);
+        println!("  COW: {} clusters, {} local", stats.cluster_count, stats.local_cluster_count);
     }
 
-    // Add experimental agent to staging only
     let exp_id = reg.total();
     let exp_vec = biased_vector(9999, 0.5);
     let mut exp_meta = Vec::with_capacity(5);
@@ -477,27 +655,77 @@ fn main() {
     push_meta(&mut exp_meta, F_SEC, MetadataValue::U64(99));
 
     let exp_r = staging.ingest_batch(&[exp_vec.as_slice()], &[exp_id], Some(&exp_meta))
-        .expect("ingest experimental");
-    println!("  Added experimental 'sentinel' to staging (epoch {})", exp_r.epoch);
-
-    let staging_st = staging.status();
-    println!("  Staging: {} vectors  (parent had {})", staging_st.total_vectors, st_after.total_vectors);
+        .expect("ingest sentinel");
+    println!("  Added 'sentinel' to staging (epoch {})", exp_r.epoch);
+    println!("  Staging: {} vectors (parent: {})", staging.status().total_vectors, st_after.total_vectors);
 
     if let Some(stats) = staging.cow_stats() {
-        println!("  COW stats after write: {} clusters, {} local", stats.cluster_count, stats.local_cluster_count);
+        println!("  COW after write: {} clusters, {} local", stats.cluster_count, stats.local_cluster_count);
     }
-
     staging.close().expect("close staging");
-    witness(&mut wit, "COW_BRANCH:staging+sentinel", 1_709_000_040_000_000_000, 0x01);
+    witness(&mut wit, "COW_BRANCH:sentinel", 1_709_000_040_000_000_000, 0x01);
 
     // -----------------------------------------------------------------------
-    // 12. Segment directory inspection
+    // 21. AGI Container manifest
     // -----------------------------------------------------------------------
-    println!("\n--- 12. Segment Directory ---");
+    println!("\n--- 21. AGI Container ---");
+    {
+        let orchestrator = br#"{"claude_code":{"model":"claude-opus-4-6"},"claude_flow":{"topology":"hierarchical","max_agents":15}}"#;
+        let tool_reg = br#"[{"name":"rvf_query","type":"vector_search"},{"name":"rvf_route","type":"task_routing"}]"#;
+        let eval_tasks = br#"[{"id":1,"task":"route 1000 tasks under 10ms"}]"#;
+        let eval_graders = br#"[{"type":"latency_p99","threshold_ms":10}]"#;
+
+        let segs = ContainerSegments {
+            kernel_present: true,
+            kernel_size: fake_kernel.len() as u64,
+            wasm_count: 1,
+            wasm_total_size: fake_wasm.len() as u64,
+            vec_segment_count: 1,
+            witness_count: wit.len() as u32,
+            orchestrator_present: true,
+            world_model_present: true,
+            ..Default::default()
+        };
+
+        let builder = AgiContainerBuilder::new([0xFA; 16], [0x01; 16])
+            .with_model_id("claude-opus-4-6")
+            .with_policy(b"autonomous-level-4", [0xBB; 8])
+            .with_orchestrator(orchestrator)
+            .with_tool_registry(tool_reg)
+            .with_agent_prompts(b"You are an OpenFang routing agent.")
+            .with_eval_tasks(eval_tasks)
+            .with_eval_graders(eval_graders)
+            .with_skill_library(b"[]")
+            .with_project_instructions(b"# OpenFang CLAUDE.md\nRoute tasks to Hands.")
+            .with_domain_profile(b"agent-os-registry-v1")
+            .offline_capable()
+            .with_segments(segs);
+
+        let (payload, header) = builder.build().expect("build container");
+        println!("  Container: {} bytes", payload.len());
+        println!("  Magic valid: {}", header.is_valid_magic());
+        println!("  Flags: kernel={} orchestrator={} eval={} offline={} tools={}",
+            header.has_kernel(), header.has_orchestrator(),
+            header.flags & 0x10 != 0, header.is_offline_capable(),
+            header.flags & 0x400 != 0);
+
+        let parsed = ParsedAgiManifest::parse(&payload).expect("parse manifest");
+        println!("  Model: {:?}", parsed.model_id_str());
+        println!("  Autonomous capable: {}", parsed.is_autonomous_capable());
+        println!("  Orchestrator: {} bytes", parsed.orchestrator_config.map_or(0, |c| c.len()));
+        println!("  Tool registry: {} bytes", parsed.tool_registry.map_or(0, |c| c.len()));
+        println!("  Project instructions: {} bytes", parsed.project_instructions.map_or(0, |c| c.len()));
+    }
+    witness(&mut wit, "AGI_CONTAINER:build+parse", 1_709_000_050_000_000_000, 0x01);
+
+    // -----------------------------------------------------------------------
+    // 22. Segment directory
+    // -----------------------------------------------------------------------
+    println!("\n--- 22. Segment Directory ---");
     let seg_dir: Vec<_> = store.segment_dir().to_vec();
-    println!("  {} segments in parent store:", seg_dir.len());
-    println!("    {:>12}  {:>8}  {:>8}  {:>6}", "SegID", "Offset", "Length", "Type");
-    println!("    {:->12}  {:->8}  {:->8}  {:->6}", "", "", "", "");
+    println!("  {} segments:", seg_dir.len());
+    println!("    {:>6}  {:>8}  {:>8}  {:>6}", "SegID", "Offset", "Length", "Type");
+    println!("    {:->6}  {:->8}  {:->8}  {:->6}", "", "", "", "");
     for &(seg_id, offset, length, seg_type) in &seg_dir {
         let tname = match seg_type {
             0x01 => "VEC",
@@ -506,27 +734,33 @@ fn main() {
             0x04 => "WITN",
             0x05 => "KERN",
             0x06 => "EBPF",
+            0x0F => "EBPF2",
+            0x10 => "WASM",
+            0x11 => "DASH",
             _ => "????",
         };
-        println!("    {:>12}  {:>8}  {:>8}  {:>6}", seg_id, offset, length, tname);
+        println!("    {:>6}  {:>8}  {:>8}  {:>6}", seg_id, offset, length, tname);
     }
 
     // -----------------------------------------------------------------------
-    // 13. Witness chain
+    // 23. Witness chain
     // -----------------------------------------------------------------------
-    println!("\n--- 13. Witness Chain ---");
+    println!("\n--- 23. Witness Chain ---");
     let chain = create_witness_chain(&wit);
     println!("  {} entries, {} bytes", wit.len(), chain.len());
-    println!("  Last witness hash: {}", hex(&store.last_witness_hash()[..8]));
+    println!("  Store witness hash: {}", hex(&store.last_witness_hash()[..8]));
 
     match verify_witness_chain(&chain) {
         Ok(verified) => {
             println!("  Integrity: VALID\n");
             let labels = [
                 "REGISTER_HANDS", "REGISTER_TOOLS", "REGISTER_CHANNELS",
-                "ROUTE_TASK", "DELETE+COMPACT", "DERIVE", "COW_BRANCH",
+                "ROUTE_TASK", "QUERY_ENVELOPE", "QUERY_AUDITED",
+                "MEMBERSHIP", "DOS_HARDENING", "ADVERSARIAL",
+                "EMBED_WASM", "EMBED_KERNEL", "EMBED_EBPF", "EMBED_DASH",
+                "DELETE+COMPACT", "DERIVE", "COW_BRANCH", "AGI_CONTAINER",
             ];
-            println!("    {:>2}  {:>4}  {:>22}  {}", "#", "Type", "Timestamp", "Action");
+            println!("    {:>2}  {:>4}  {:>22}  {}", "#", "Kind", "Timestamp", "Action");
             println!("    {:->2}  {:->4}  {:->22}  {:->20}", "", "", "", "");
             for (i, e) in verified.iter().enumerate() {
                 let t = if e.witness_type == 0x01 { "PROV" } else { "COMP" };
@@ -538,19 +772,25 @@ fn main() {
     }
 
     // -----------------------------------------------------------------------
-    // 14. Persistence round-trip
+    // 24. Persistence
     // -----------------------------------------------------------------------
-    println!("\n--- 14. Persistence ---");
+    println!("\n--- 24. Persistence ---");
     let final_st = store.status();
-    println!("  Before close: {} vectors, {} bytes", final_st.total_vectors, final_st.file_size);
-
-    // Parent is frozen/read-only, so we just drop it
+    println!("  Before: {} vectors, {} segments, {} bytes",
+        final_st.total_vectors, final_st.total_segments, final_st.file_size);
     drop(store);
 
     let reopened = RvfStore::open_readonly(&store_path).expect("reopen");
     let reopen_st = reopened.status();
-    println!("  After reopen: {} vectors, epoch {}", reopen_st.total_vectors, reopen_st.current_epoch);
+    println!("  After:  {} vectors, epoch {}", reopen_st.total_vectors, reopen_st.current_epoch);
     println!("  File ID preserved: {}", hex(&reopened.file_id()[..8]) == parent_fid);
+
+    // Verify WASM survives persistence
+    let wasm_ok = reopened.extract_wasm().expect("re-extract wasm").is_some();
+    let kern_ok = reopened.extract_kernel().expect("re-extract kernel").is_some();
+    let ebpf_ok = reopened.extract_ebpf().expect("re-extract ebpf").is_some();
+    let dash_ok = reopened.extract_dashboard().expect("re-extract dash").is_some();
+    println!("  WASM={} Kernel={} eBPF={} Dashboard={}", wasm_ok, kern_ok, ebpf_ok, dash_ok);
 
     let recheck = reopened.query(&query, K, &QueryOptions::default()).expect("recheck");
     assert_eq!(all.len(), recheck.len(), "count mismatch");
@@ -564,16 +804,18 @@ fn main() {
     // Summary
     // -----------------------------------------------------------------------
     println!("\n=== Summary ===\n");
-    println!("  Registry:  {} hands + {} tools + {} channels = {} components",
+    println!("  Registry:     {} hands + {} tools + {} channels = {}",
         HANDS.len(), TOOLS.len(), CHANNELS.len(), reg.total());
-    println!("  Deleted:   twitter (+ compacted)");
-    println!("  Derived:   snapshot at depth {}", child_depth);
-    println!("  Branched:  COW staging with experimental 'sentinel'");
-    println!("  Segments:  {} in parent", seg_dir.len());
-    println!("  Witness:   {} entries", wit.len());
-    println!("  File size: {} bytes", final_st.file_size);
-    println!("  Filters:   security, tier, category — all passing");
-    println!("  Persist:   verified");
+    println!("  Queries:      basic, filtered, envelope, audited");
+    println!("  Filters:      security (>=80), tier (==4), category, membership");
+    println!("  Segments:     VEC + WASM + KERN + EBPF + DASH = {} total", seg_dir.len());
+    println!("  Lifecycle:    delete + compact (twitter removed)");
+    println!("  Lineage:      derive depth {}, COW branch with sentinel", child_depth);
+    println!("  Security:     DoS bucket + negative cache + PoW + adversarial detect");
+    println!("  AGI:          container manifest (autonomous capable)");
+    println!("  Witness:      {} entries, chain verified", wit.len());
+    println!("  File:         {} bytes, {} segments, persistence verified",
+        final_st.file_size, final_st.total_segments);
 
-    println!("\nDone.");
+    println!("\nDone — {} RVF capabilities exercised.", 24);
 }

@@ -1,6 +1,6 @@
-# OpenFang Agent OS — RVF Example
+# OpenFang Agent OS — RVF Full Surface Demo
 
-A deep RVF integration example that models the [OpenFang](https://github.com/RightNow-AI/openfang) Agent Operating System as a searchable component registry, exercising the full RVF capability surface.
+Exercises **every major RVF capability** against a realistic agent-OS registry, using [OpenFang](https://github.com/RightNow-AI/openfang) as the domain model. A single ~35 KB RVF file holds 65 vector components plus embedded WASM, kernel, eBPF, and dashboard segments.
 
 ## Run
 
@@ -9,11 +9,34 @@ cd examples/rvf
 cargo run --example openfang
 ```
 
-## What It Does
+## 24 Capabilities Demonstrated
 
-Creates a single RVF file (~34 KB) containing an entire agent OS registry, then exercises 14 distinct RVF capabilities against it.
+| # | Capability | RVF API | What It Shows |
+|--:|-----------|---------|---------------|
+| 1 | **Store creation** | `RvfStore::create` | 128-dim L2 store with file identity |
+| 2-4 | **Batch ingestion** | `ingest_batch` | Multi-type metadata (String, U64) with per-category vector biasing |
+| 5 | **Nearest-neighbor search** | `query` | Unfiltered + type-filtered task routing |
+| 6 | **Quality envelope** | `query_with_envelope` | ResponseQuality, safety-net activation, budget reporting |
+| 7 | **Audited query** | `query_audited` | Auto-appends witness entry per search (compliance) |
+| 8 | **Security filter** | `FilterExpr::Ge` | Hands with security >= 80 |
+| 9 | **Tier filter** | `FilterExpr::Eq` | Tier-4 autonomous agents only |
+| 10 | **Category filter** | `FilterExpr::And` | Security tools by category |
+| 11 | **Membership filter** | `MembershipFilter` | Tenant isolation — tools-only view via bitmap |
+| 12 | **DoS hardening** | `BudgetTokenBucket`, `NegativeCache`, `ProofOfWork` | Rate limiting, degenerate query blacklisting, PoW challenge |
+| 13 | **Adversarial detection** | `is_degenerate_distribution`, `centroid_distance_cv` | CV analysis to detect uniform (attack) distance distributions |
+| 14 | **Embed WASM** | `embed_wasm` / `extract_wasm` | Microkernel role, self-bootstrapping check |
+| 15 | **Embed kernel** | `embed_kernel` / `extract_kernel` | Linux image with cmdline, API port binding |
+| 16 | **Embed eBPF** | `embed_ebpf` / `extract_ebpf` | Socket filter program (2 instructions) |
+| 17 | **Embed dashboard** | `embed_dashboard` / `extract_dashboard` | HTML registry dashboard bundle |
+| 18 | **Delete + compact** | `delete` + `compact` | Decommission 'twitter', reclaim 512 bytes |
+| 19 | **Derive (lineage)** | `derive` | Snapshot child with parent provenance, depth 0→1 |
+| 20 | **COW branch + freeze** | `freeze` + `branch` | Staging env with experimental 'sentinel' agent |
+| 21 | **AGI container** | `AgiContainerBuilder` + `ParsedAgiManifest` | Full manifest: model, orchestrator, tools, eval, policy |
+| 22 | **Segment directory** | `segment_dir` | Raw segment inventory (VEC, WASM, KERN, EBPF, DASH) |
+| 23 | **Witness chain** | `create_witness_chain` + `verify` | 17-entry cryptographic audit trail |
+| 24 | **Persistence** | `close` + `open_readonly` | Round-trip with file ID, WASM, kernel, eBPF, dashboard preservation |
 
-### Registry Contents
+## Registry Contents
 
 | Component | Count | Description |
 |-----------|------:|-------------|
@@ -21,23 +44,6 @@ Creates a single RVF file (~34 KB) containing an entire agent OS registry, then 
 | **Tools** | 38 | Built-in capabilities across 13 categories |
 | **Channels** | 20 | Messaging adapters (Telegram, Discord, Slack, WhatsApp, etc.) |
 | **Total** | 65 | All searchable in one vector space |
-
-### RVF Capabilities Exercised
-
-| # | Capability | RVF API | What It Shows |
-|---|-----------|---------|---------------|
-| 1 | **Store creation** | `RvfStore::create` | 128-dim L2 store with file identity |
-| 2-4 | **Batch ingestion** | `ingest_batch` | Multi-type metadata (String, U64) with per-category vector biasing |
-| 5 | **Nearest-neighbor search** | `query` | Unfiltered + type-filtered task routing |
-| 6 | **Combined filters** | `FilterExpr::And` + `Ge` | Security threshold filtering (>= 80) |
-| 7 | **Equality filter** | `FilterExpr::Eq` | Tier-4 autonomous agent isolation |
-| 8 | **Category filter** | `FilterExpr::And` | Tool discovery by category |
-| 9 | **Delete + compact** | `delete` + `compact` | Decommission 'twitter' hand, reclaim 512 bytes |
-| 10 | **Derive (lineage)** | `derive` | Snapshot with parent-child provenance, depth tracking |
-| 11 | **COW branching** | `freeze` + `branch` | Staging environment with experimental 'sentinel' agent |
-| 12 | **Segment inspection** | `segment_dir` | Raw segment directory (VEC, MANIFEST, JOURNAL, etc.) |
-| 13 | **Witness chain** | `create_witness_chain` + `verify` | 7-entry cryptographic audit trail |
-| 14 | **Persistence** | `close` + `open_readonly` | Round-trip verification with file ID preservation |
 
 ## Metadata Schema
 
@@ -73,29 +79,79 @@ Telegram, Discord, Slack, WhatsApp, Signal, Matrix, Email (SMTP/IMAP), Teams, Go
 
 ### Vector Biasing
 
-Tools and channels use `category_bias()` — a hash-based offset applied to the first 16 dimensions — so items sharing a category cluster in vector space. Hands use tier-proportional bias (`tier * 0.1`) to create performance-tier clusters.
+Tools and channels use `category_bias()` — a hash-based offset on the first 16 dimensions — so same-category items cluster in vector space. Hands use tier-proportional bias (`tier * 0.1`).
 
-### Delete + Compact Lifecycle
+### Quality Envelope (Step 6)
 
-Step 9 demonstrates the full decommission workflow:
-1. `delete(&[twitter_id])` — soft-delete, marks vector as tombstoned
-2. `compact()` — rewrites the store, reclaiming dead space
+`query_with_envelope` returns a `QualityEnvelope` containing:
+- `ResponseQuality` — Verified, Approximate, Degraded, or Unreliable
+- `SearchEvidenceSummary` — HNSW vs. safety-net candidate counts
+- `BudgetReport` — time budget consumption in microseconds
+- Optional `DegradationReport` if quality falls below threshold
+
+### Audited Queries (Step 7)
+
+`query_audited` works like `query` but auto-appends a `COMPUTATION` witness entry to the store's on-disk witness chain. Used for compliance-grade audit trails where every search must be recorded.
+
+### Membership Filter (Step 11)
+
+A dense bitmap that controls vector visibility:
+- **Include mode**: only IDs in the bitmap are visible (tenant isolation)
+- **Exclude mode**: IDs in the bitmap are hidden (access revocation)
+- Serializes to compact bytes for network transfer between nodes
+
+### DoS Hardening (Step 12)
+
+Three-layer defense:
+1. **BudgetTokenBucket** — rate-limits distance ops per time window
+2. **NegativeCache** — blacklists query signatures that trigger degenerate search >N times
+3. **ProofOfWork** — optional computational challenge (FNV-1a hash with leading-zero difficulty)
+
+### Adversarial Detection (Step 13)
+
+Detects attack vectors where all centroid distances are nearly uniform (CV < 0.05), indicating the query is designed to force exhaustive search. The `adaptive_n_probe` function widens search when degenerate distributions are detected.
+
+### Segment Embedding (Steps 14-17)
+
+Four segment types can be embedded into the RVF file:
+- **WASM** — query engine microkernel or interpreter (enables self-bootstrapping)
+- **Kernel** — Linux image with cmdline and API port binding
+- **eBPF** — socket filter or XDP programs for kernel-level acceleration
+- **Dashboard** — HTML/JS bundle for browser-based registry visualization
+
+All survive close/reopen and can be extracted with `extract_*` methods.
+
+### AGI Container (Step 21)
+
+`AgiContainerBuilder` packages the entire agent OS into a self-describing manifest:
+- Model pinning (`claude-opus-4-6`)
+- Orchestrator config (Claude Code + Claude Flow)
+- Tool registry, agent prompts, eval suite, grading rules
+- Policy, skill library, project instructions
+- Segment inventory (kernel, WASM, vectors, witnesses)
+- Offline capability flag
+
+`ParsedAgiManifest` provides zero-copy parsing and `is_autonomous_capable()` validation.
+
+### Delete + Compact Lifecycle (Step 18)
+
+1. `delete(&[id])` — soft-delete (tombstone), dead_ratio increases
+2. `compact()` — rewrites store, reclaims dead space
 3. Post-delete queries confirm the vector is gone
 
-### COW Branching
+### COW Branching (Step 20)
 
-Step 11 shows a staging/production pattern:
-1. `freeze()` — makes the parent read-only (immutable baseline)
-2. `branch()` — creates a COW child inheriting all parent vectors
-3. New vectors added to the child don't affect the parent
+1. `freeze()` — immutable baseline
+2. `branch()` — COW child inheriting all parent vectors
+3. Writes to child allocate local clusters only
 4. `cow_stats()` reports cluster-level copy-on-write telemetry
 
-### Lineage Tracking
+### Lineage (Step 19)
 
-Step 10 derives a snapshot child and verifies:
-- Child `parent_id` matches parent `file_id`
-- Lineage depth increments (0 -> 1)
-- Provenance chain is cryptographically verifiable
+`derive()` creates a child with:
+- New `file_id`, parent's `file_id` as `parent_id`
+- `lineage_depth` incremented (0 → 1)
+- Provenance chain cryptographically verifiable
 
 ## About OpenFang
 
