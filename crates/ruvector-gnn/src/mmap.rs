@@ -883,9 +883,9 @@ mod tests {
 
         let accumulator = MmapGradientAccumulator::new(&path, 128, 100).unwrap();
 
-        assert_eq!(accumulator.grad_offset(0), 0);
-        assert_eq!(accumulator.grad_offset(1), 128 * 4); // 128 floats * 4 bytes
-        assert_eq!(accumulator.grad_offset(5), 128 * 4 * 5);
+        assert_eq!(accumulator.grad_offset(0), Some(0));
+        assert_eq!(accumulator.grad_offset(1), Some(128 * 4)); // 128 floats * 4 bytes
+        assert_eq!(accumulator.grad_offset(5), Some(128 * 4 * 5));
     }
 
     #[test]

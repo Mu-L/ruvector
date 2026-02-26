@@ -959,7 +959,7 @@ mod tests {
             },
         ];
         let mut trainer = VerifiedTrainer::new(4, 8, config, invariants);
-        let layer = RuvectorLayer::new(4, 8, 2, 0.1);
+        let layer = RuvectorLayer::new(4, 8, 2, 0.1).unwrap();
         let (features, neighbors, weights, targets) = test_data();
 
         for step_num in 1..=10 {
@@ -1015,7 +1015,7 @@ mod tests {
         }];
 
         let mut trainer = VerifiedTrainer::new(4, 8, config, invariants);
-        let layer = RuvectorLayer::new(4, 8, 2, 0.1);
+        let layer = RuvectorLayer::new(4, 8, 2, 0.1).unwrap();
 
         // Use features that produce large gradients
         let features = vec![vec![10.0, 10.0, 10.0, 10.0]];
@@ -1061,7 +1061,7 @@ mod tests {
         }];
 
         let mut trainer = VerifiedTrainer::new(4, 8, config, invariants);
-        let layer = RuvectorLayer::new(4, 8, 2, 0.0);
+        let layer = RuvectorLayer::new(4, 8, 2, 0.0).unwrap();
 
         let features = vec![vec![1.0, 2.0, 3.0, 4.0]];
         let neighbors = vec![vec![vec![0.5, 1.0, 1.5, 2.0]]];
@@ -1111,7 +1111,7 @@ mod tests {
         }];
 
         let mut trainer = VerifiedTrainer::new(4, 8, config, invariants);
-        let layer = RuvectorLayer::new(4, 8, 2, 0.0);
+        let layer = RuvectorLayer::new(4, 8, 2, 0.0).unwrap();
         let (features, neighbors, weights_data, targets) = test_data();
 
         // Run 3 steps
@@ -1188,7 +1188,7 @@ mod tests {
         }];
 
         let mut trainer = VerifiedTrainer::new(4, 8, config, invariants);
-        let layer = RuvectorLayer::new(4, 8, 2, 0.0);
+        let layer = RuvectorLayer::new(4, 8, 2, 0.0).unwrap();
         let (features, neighbors, weights_data, targets) = test_data();
 
         let result = trainer
@@ -1310,7 +1310,7 @@ mod tests {
             rollback_strategy: RollbackStrategy::DeltaApply,
         }];
         let mut trainer = VerifiedTrainer::new(4, 8, config, invariants);
-        let layer = RuvectorLayer::new(4, 8, 2, 0.0);
+        let layer = RuvectorLayer::new(4, 8, 2, 0.0).unwrap();
         let (features, neighbors, weights, targets) = test_data();
 
         let _ = trainer.train_step(&features, &neighbors, &weights, &targets, &layer);
@@ -1342,7 +1342,7 @@ mod tests {
         }];
 
         let mut trainer = VerifiedTrainer::new(4, 8, config, invariants);
-        let layer = RuvectorLayer::new(4, 8, 2, 0.0);
+        let layer = RuvectorLayer::new(4, 8, 2, 0.0).unwrap();
         let (features, neighbors, weights, targets) = test_data();
 
         // During warmup (steps 0..4), violations should NOT block commit
@@ -1390,7 +1390,7 @@ mod tests {
         ];
 
         let mut trainer = VerifiedTrainer::new(4, 8, config, invariants);
-        let layer = RuvectorLayer::new(4, 8, 2, 0.1);
+        let layer = RuvectorLayer::new(4, 8, 2, 0.1).unwrap();
         let (features, neighbors, weights, targets) = test_data();
 
         let result = trainer

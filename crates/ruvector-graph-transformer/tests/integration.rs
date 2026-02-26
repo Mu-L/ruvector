@@ -342,7 +342,7 @@ mod verified_training_tests {
         ];
         let mut trainer = VerifiedTrainer::new(4, 8, config, invariants);
 
-        let layer = RuvectorLayer::new(4, 8, 2, 0.0);
+        let layer = RuvectorLayer::new(4, 8, 2, 0.0).unwrap();
         let features = vec![vec![1.0, 0.0, 0.0, 0.0]];
         let neighbors = vec![vec![]];
         let weights = vec![vec![]];
@@ -373,7 +373,7 @@ mod verified_training_tests {
         ];
         let mut trainer = VerifiedTrainer::new(4, 8, config, invariants);
 
-        let layer = RuvectorLayer::new(4, 8, 2, 0.0);
+        let layer = RuvectorLayer::new(4, 8, 2, 0.0).unwrap();
 
         for _ in 0..3 {
             let result = trainer.train_step(
