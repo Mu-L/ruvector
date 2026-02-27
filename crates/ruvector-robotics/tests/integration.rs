@@ -13,9 +13,7 @@ use ruvector_robotics::cognitive::{
     TrackedObject, WorkingMemory, WorldModel,
 };
 use ruvector_robotics::mcp::{RoboticsToolRegistry, ToolCategory};
-use ruvector_robotics::perception::{
-    ObstacleDetector, PerceptionConfig, PerceptionPipeline, SceneGraphBuilder,
-};
+use ruvector_robotics::perception::{PerceptionConfig, PerceptionPipeline};
 
 // ---------------------------------------------------------------------------
 // Helpers
