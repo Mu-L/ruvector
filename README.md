@@ -27,6 +27,9 @@ User Query → [SONA Engine] → Model Response → User Feedback
                          (< 1ms adaptation)
 ```
 
+<details>
+<summary>🔍 RuVector vs Typical Vector Databases (20 differences)</summary>
+
 | | RuVector | Typical Vector DB |
 |---|---|---|
 | **Self-Learning & Optimization** | | |
@@ -54,6 +57,8 @@ User Query → [SONA Engine] → Model Response → User Feedback
 | [Scale out](./crates/ruvector-replication) | 📈 Raft consensus, multi-master replication, auto-sharding | Paid tiers, per-vector pricing |
 | [Post-quantum crypto](./crates/rvf/rvf-crypto) | 🛡️ ML-DSA-65 and Ed25519 signatures on every segment | Not available |
 | Cost | 💰 Free forever — open source (MIT) | Per-query or per-vector pricing |
+
+</details>
 
 <details>
 <summary>📋 See Full Capabilities (75 features across 10 categories)</summary>
