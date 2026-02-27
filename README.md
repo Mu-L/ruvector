@@ -56,92 +56,122 @@ User Query → [SONA Engine] → Model Response → User Feedback
 | Cost | 💰 Free forever — open source (MIT) | Per-query or per-vector pricing |
 
 <details>
-<summary>📋 See Full Capabilities (53 features)</summary>
+<summary>📋 See Full Capabilities (75 features across 10 categories)</summary>
 
 **Core Vector Database**
 | # | Capability | What It Does |
 |---|------------|--------------|
-| 1 | **Store vectors** | Embeddings from OpenAI, Cohere, local ONNX with HNSW indexing |
-| 2 | **Query with Cypher** | Graph queries like Neo4j (`MATCH (a)-[:SIMILAR]->(b)`) |
-| 3 | **The index learns** | GNN layers make search results improve over time |
-| 4 | **Hyperbolic HNSW** | Hierarchical data in hyperbolic space for better tree structures |
-| 5 | **Compress automatically** | 2-32x memory reduction with adaptive tiered compression |
+| 1 | [**Store vectors**](./crates/ruvector-core) | Embeddings from OpenAI, Cohere, local ONNX with HNSW indexing and SIMD acceleration |
+| 2 | [**Query with Cypher**](./crates/ruvector-graph) | Graph queries like Neo4j — `MATCH (a)-[:SIMILAR]->(b)` with hyperedges |
+| 3 | [**The index learns**](./crates/ruvector-gnn) | GNN layers make search results improve over time — every query teaches the system |
+| 4 | [**Hyperbolic HNSW**](./crates/ruvector-hyperbolic-hnsw) | Hierarchy-aware search in Poincare ball space — better for trees and taxonomies |
+| 5 | [**Compress automatically**](./crates/ruvector-temporal-tensor) | 2-32x memory reduction with adaptive tiered compression and temporal tensor reuse |
+| 6 | [**Metadata filtering**](./crates/ruvector-filter) | Filter search results by any field before scanning vectors — fast hybrid queries |
+| 7 | [**Collections**](./crates/ruvector-collections) | Multi-tenant, schema-managed collections — isolate data per customer or project |
+| 8 | [**Snapshots**](./crates/ruvector-snapshot) | Point-in-time backups — restore your database to any previous state |
 
 **Distributed Systems**
 | # | Capability | What It Does |
 |---|------------|--------------|
-| 6 | **Raft consensus** | Leader election, log replication, fault-tolerant coordination |
-| 7 | **Multi-master replication** | Vector clocks, conflict resolution, geo-distributed sync |
-| 8 | **Burst scaling** | 10-50x capacity scaling for traffic spikes |
-| 9 | **Auto-sharding** | Automatic data partitioning across nodes |
+| 9 | [**Raft consensus**](./crates/ruvector-raft) | Leader election and log replication — nodes agree on state even when some fail |
+| 10 | [**Multi-master replication**](./crates/ruvector-replication) | Vector clocks, conflict resolution, geo-distributed sync across data centers |
+| 11 | [**Cluster management**](./crates/ruvector-cluster) | Horizontal scaling with consistent hashing — add nodes without rebalancing everything |
+| 12 | [**Delta consensus**](./crates/ruvector-delta-consensus) | Track behavioral changes across distributed nodes with CRDTs and causal ordering |
+| 13 | **Burst scaling** | 10-50x capacity scaling for traffic spikes — absorb load then scale back down |
+| 14 | **Auto-sharding** | Automatic data partitioning across nodes based on access patterns |
 
 **AI & Machine Learning**
 | # | Capability | What It Does |
 |---|------------|--------------|
-| 10 | **Run LLMs locally** | ruvllm with GGUF, Metal/CUDA/ANE acceleration |
-| 11 | **RuvLTRA models** | Pre-trained GGUF for routing & embeddings (<10ms) → [HuggingFace](https://huggingface.co/ruv/ruvltra) |
-| 12 | **SONA learning** | Self-Optimizing Neural Architecture with LoRA, EWC++ |
-| 13 | **46 attention mechanisms** | Flash, linear, graph, hyperbolic, mincut-gated (50% compute) |
-| 14 | **Spiking neural networks** | Event-driven neuromorphic computing |
-| 15 | **Mincut-gated transformer** | Dynamic attention via graph min-cut optimization |
-| 16 | **Route AI requests** | Semantic routing + FastGRNN for LLM optimization |
-| 17 | **Sublinear Solvers in SQL** | PageRank, CG, Laplacian solver — O(log n) to O(√n) via PostgreSQL |
-| 18 | **Math Distances in SQL** | Wasserstein, Sinkhorn OT, KL divergence, spectral clustering |
-| 19 | **Topological Data Analysis** | Persistent homology, Betti numbers, embedding drift detection |
-| 20 | **Sona Learning in SQL** | Micro-LoRA trajectory learning with EWC++ forgetting prevention |
-| 21 | **Domain Expansion** | Cross-domain transfer learning with contextual bandits |
-| 22 | **Extended Attention** | O(n) linear, MoE, hyperbolic, sliding window attention in SQL |
-| 52 | **Proof-Gated Graph Transformers** | 8 verified modules: every graph mutation requires a formal proof |
-| 53 | **Verified Training** | Training with certificates, delta-apply rollback, fail-closed invariants |
+| 15 | [**Run LLMs locally**](./crates/ruvllm) | Load GGUF models and run inference on your hardware — Metal, CUDA, ANE, WebGPU |
+| 16 | [**RuvLTRA models**](https://huggingface.co/ruv/ruvltra) | Pre-trained GGUF for routing and embeddings in under 10 ms |
+| 17 | [**SONA learning**](./crates/sona) | Self-Optimizing Neural Architecture — LoRA fine-tuning + EWC++ memory preservation |
+| 18 | [**46 attention mechanisms**](./crates/ruvector-attention) | Flash, linear, graph, hyperbolic, mincut-gated (cuts compute 50%) |
+| 19 | [**Semantic routing**](./crates/ruvector-router-core) | Route AI requests to the right model or handler using FastGRNN neural inference |
+| 20 | [**Sparse inference**](./crates/ruvector-sparse-inference) | PowerInfer-style engine — only activate the neurons you need, 2-10x faster on edge |
+| 21 | [**Tiny Dancer**](./crates/ruvector-tiny-dancer-core) | Production-grade agent routing with FastGRNN — lightweight alternative to full LLM |
+| 22 | [**Domain expansion**](./crates/ruvector-domain-expansion) | Cross-domain transfer learning — new tasks bootstrap from past learning automatically |
+| 23 | [**Advanced math**](./crates/ruvector-math) | Optimal transport, Sinkhorn distances, KL divergence, spectral clustering |
+| 24 | [**Coherence measurement**](./crates/ruvector-coherence) | Measure signal quality and compare attention mechanisms objectively |
 
-**Cognitive Containers ([RVF](./crates/rvf/README.md))**
+**Graph Transformers** ([8 verified modules](./crates/ruvector-graph-transformer))
 | # | Capability | What It Does |
 |---|------------|--------------|
-| 23 | **Self-boot as a microservice** | A `.rvf` file contains a real Linux kernel — drop it on a VM and it boots in 125 ms |
-| 24 | **eBPF acceleration** | Hot vectors served in kernel data path via XDP, socket filter, and TC programs |
-| 25 | **5.5 KB WASM runtime** | Same file runs queries in a browser tab with zero backend |
-| 26 | **COW branching** | Git-like copy-on-write — 1M-vector parent, 100 edits = ~2.5 MB child |
-| 27 | **Witness chains** | Tamper-evident hash-linked audit trail for every operation |
-| 28 | **Post-quantum signatures** | ML-DSA-65 and SLH-DSA-128s alongside Ed25519 |
-| 29 | **DNA-style lineage** | Track parent/child derivation chains with cryptographic hashes |
-| 30 | **24 segment types** | VEC, INDEX, KERNEL, EBPF, WASM, COW_MAP, WITNESS, CRYPTO, and 16 more |
+| 25 | [**Proof-gated mutation**](./crates/ruvector-verified) | Every write to graph state requires a formal proof — bugs cannot corrupt data |
+| 26 | **Sublinear attention** | O(n log n) via LSH bucketing, PPR sampling, and spectral sparsification |
+| 27 | **Physics-informed layers** | Hamiltonian dynamics, gauge equivariant message passing — energy conserved by construction |
+| 28 | **Biological layers** | Spiking attention, Hebbian/STDP learning, dendritic branching |
+| 29 | **Self-organizing layers** | Morphogenetic fields, reaction-diffusion growth — graphs that restructure themselves |
+| 30 | **Verified training** | Training certificates, delta-apply rollback — bad gradient steps auto-reversed |
+| 31 | **Manifold geometry** | Product manifolds S^n x H^m x R^k — work in curved spaces, not just flat |
+| 32 | **Temporal-causal layers** | Causal masking, Granger causality extraction, continuous-time ODE integration |
+| 33 | **Economic layers** | Nash equilibrium attention, Shapley attribution — fair value assignment in multi-agent graphs |
+
+**Cognitive Containers** ([RVF format](./crates/rvf/README.md))
+| # | Capability | What It Does |
+|---|------------|--------------|
+| 34 | **Self-boot as a microservice** | A single `.rvf` file contains vectors, models, and a Linux kernel — boots in 125 ms |
+| 35 | **eBPF acceleration** | Hot vectors served in kernel data path via XDP, socket filter, and TC programs |
+| 36 | **5.5 KB WASM runtime** | Same `.rvf` file runs queries in a browser tab with zero backend |
+| 37 | [**COW branching**](./crates/rvf) | Git-like copy-on-write — 1M vectors, 100 edits = ~2.5 MB branch |
+| 38 | [**Witness chains**](./crates/rvf/rvf-crypto) | Tamper-evident hash-linked audit trail records every operation automatically |
+| 39 | [**Post-quantum signatures**](./crates/rvf/rvf-crypto) | ML-DSA-65 and SLH-DSA-128s alongside Ed25519 — future-proof cryptography |
+| 40 | **DNA-style lineage** | Track parent/child derivation chains with cryptographic hashes |
+| 41 | **25 segment types** | VEC, INDEX, KERNEL, EBPF, WASM, COW_MAP, WITNESS, CRYPTO, and 17 more |
+
+**PostgreSQL Extension** ([230+ SQL functions](./crates/ruvector-postgres))
+| # | Capability | What It Does |
+|---|------------|--------------|
+| 42 | **Drop-in pgvector replacement** | Same SQL interface but with self-learning search — no app changes needed |
+| 43 | **Sublinear solvers in SQL** | PageRank, conjugate gradient, Laplacian solver — O(log n) to O(sqrt(n)) |
+| 44 | **Math distances in SQL** | Wasserstein, Sinkhorn, KL divergence, spectral clustering — all from SQL |
+| 45 | **Topological data analysis** | Persistent homology, Betti numbers, embedding drift detection |
+| 46 | **SONA learning in SQL** | Micro-LoRA trajectory learning with EWC++ forgetting prevention |
+| 47 | **Extended attention in SQL** | O(n) linear, MoE, hyperbolic, sliding window attention — all callable from SQL |
 
 **Specialized Processing**
 | # | Capability | What It Does |
 |---|------------|--------------|
-| 31 | **SciPix OCR** | LaTeX/MathML extraction from scientific documents |
-| 32 | **DAG workflows** | Self-learning directed acyclic graph execution |
-| 33 | **Cognitum Gate** | Cognitive AI gateway with TileZero acceleration |
-| 34 | **FPGA transformer** | Hardware-accelerated transformer inference |
-| 35 | **Quantum coherence** | ruQu for quantum error correction via dynamic min-cut |
-| 36 | **Sublinear Solvers** | 8 algorithms: Neumann, CG, Forward Push, TRUE, BMSSP — O(log n) to O(√n) |
+| 48 | [**SciPix OCR**](./examples/scipix) | Extract LaTeX and MathML from scientific documents and PDFs |
+| 49 | [**DAG workflows**](./crates/ruvector-dag) | Self-learning directed acyclic graph execution for multi-step pipelines |
+| 50 | [**Cognitum Gate**](./crates/cognitum-gate-kernel) | Cognitive AI gateway with TileZero acceleration for fast routing |
+| 51 | [**FPGA transformer**](./crates/ruvector-fpga-transformer) | Hardware-accelerated transformer inference on programmable chips |
+| 52 | [**Quantum coherence**](./crates/ruQu) | Error correction via dynamic min-cut optimization for quantum circuits |
+| 53 | [**Sublinear solvers**](./crates/ruvector-solver) | 8 algorithms (Neumann, CG, Forward Push, TRUE, BMSSP) — O(log n) to O(sqrt(n)) |
+| 54 | [**Mincut-gated transformer**](./crates/ruvector-mincut-gated-transformer) | Dynamic attention that prunes irrelevant connections using graph min-cut |
+| 55 | [**Nervous system**](./crates/ruvector-nervous-system) | 5-layer bio-inspired adaptive system with spiking networks and BTSP learning |
+| 56 | [**Prime Radiant**](./crates/prime-radiant) | Coherence engine using sheaf Laplacian math for AI safety and hallucination detection |
 
-**Genomics & Health**
+**Genomics & Health** ([rvDNA](./examples/dna))
 | # | Capability | What It Does |
 |---|------------|--------------|
-| 37 | **rvDNA genomic analysis** | Variant calling, protein translation, HNSW k-mer search in 12 ms |
-| 38 | **`.rvdna` file format** | AI-native binary with pre-computed vectors, tensors, and embeddings |
-| 39 | **Instant diagnostics** | Sickle cell, cancer mutations, drug dosing — runs on any device |
-| 40 | **Privacy-first WASM** | Browser-based genomics, data never leaves the device |
-| 41 | **Health biomarker engine** | Composite polygenic risk scoring (20 SNPs, 6 gene-gene interactions, 2 us) |
-| 42 | **Streaming biomarkers** | Real-time anomaly detection, CUSUM changepoints, trend analysis (>100k readings/sec) |
+| 57 | **rvDNA genomic analysis** | Variant calling, protein translation, HNSW k-mer search in 12 ms |
+| 58 | **`.rvdna` file format** | AI-native binary with pre-computed vectors, tensors, and embeddings |
+| 59 | **Instant diagnostics** | Sickle cell, cancer mutations, drug dosing — runs on any device |
+| 60 | **Privacy-first WASM** | Browser-based genomics — your DNA data never leaves the device |
+| 61 | **Biomarker engine** | Composite polygenic risk scoring (20 SNPs, 6 gene-gene interactions, 2 us) |
+| 62 | **Streaming biomarkers** | Real-time anomaly detection, CUSUM changepoints, trend analysis (>100k readings/sec) |
 
 **Platform & Integration**
 | # | Capability | What It Does |
 |---|------------|--------------|
-| 43 | **Run anywhere** | Node.js, browser (WASM), edge (rvLite), HTTP server, Rust, bare metal |
-| 44 | **Drop into Postgres** | pgvector-compatible extension with SIMD acceleration |
-| 45 | **MCP integration** | Model Context Protocol server for AI assistant tools |
-| 46 | **Cloud deployment** | One-click deploy to Cloud Run, Kubernetes |
-| 47 | **22 Rust crates + 4 npm packages** | [RVF SDK](./crates/rvf/README.md) published on [crates.io](https://crates.io/crates/rvf-runtime) and [npm](https://www.npmjs.com/package/@ruvector/rvf) |
+| 63 | **Run anywhere** | Rust, Node.js, browser (WASM), edge ([rvLite](./crates/rvlite)), HTTP server, bare metal |
+| 64 | [**MCP server**](./crates/mcp-gate) | Model Context Protocol for AI assistants — Claude, GPT, and other agents can use RuVector as a tool |
+| 65 | **Cloud deployment** | One-click deploy to [Google Cloud Run](./examples/google-cloud), Kubernetes |
+| 66 | [**iOS App Clip**](./examples/app-clip) | Scan a QR code to load an RVF cognitive seed on your phone — under 15 MB |
+| 67 | [**Prometheus metrics**](./crates/ruvector-metrics) | Built-in monitoring — export latency, throughput, and memory stats to Grafana |
+| 68 | **90+ Rust crates + npm packages** | Published on [crates.io](https://crates.io/crates/rvf-runtime) and [npm](https://www.npmjs.com/package/@ruvector/rvf) |
 
-**Self-Learning & Adaptation**
+**Examples & Applications**
 | # | Capability | What It Does |
 |---|------------|--------------|
-| 48 | **Self-learning hooks** | Q-learning, neural patterns, HNSW memory |
-| 49 | **ReasoningBank** | Trajectory learning with verdict judgment |
-| 50 | **Economy system** | Tokenomics, CRDT-based distributed state |
-| 51 | **Agentic synthesis** | Multi-agent workflow composition |
+| 69 | [**Neural Trader**](./examples/neural-trader) | Algorithmic trading with Kelly Criterion position sizing and LSTM-Transformer prediction |
+| 70 | [**Spiking Neural Network**](./examples/meta-cognition-spiking-neural-network) | Hybrid AI combining spiking networks, SIMD vector ops, and 5 attention types |
+| 71 | [**ReFrag Pipeline**](./examples/refrag-pipeline) | Compress-Sense-Expand architecture — ~30x RAG latency reduction |
+| 72 | [**Edge Network**](./examples/edge-net) | Distributed collective AI — share idle compute across devices |
+| 73 | [**Vibecast 7Sense**](./examples/vibecast-7sense) | Transform bird calls into navigable geometric space using vector search |
+| 74 | [**Ultra-Low Latency Sim**](./examples/ultra-low-latency-sim) | Meta-simulation achieving quadrillion simulations per second on CPU with SIMD |
+| 75 | [**Verified Applications**](./examples/verified-applications) | 10 exotic proof-carrying apps: weapons filters, legal forensics, medical diagnostics |
 
 </details>
 
