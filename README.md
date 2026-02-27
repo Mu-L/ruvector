@@ -193,7 +193,7 @@ RuVector isn't a database you add to your stack — it's the entire stack. Self-
 | 🗄️ | **Storage** | PostgreSQL + Redis + S3 | Vector store, graph database, key-value cache, and 230+ SQL functions built in |
 | 🔍 | **Search** | Pinecone, Weaviate, Qdrant | Self-learning HNSW — a GNN watches every query and improves results automatically |
 | 🔗 | **Graph** | Separate graph database | Neo4j-compatible Cypher, W3C SPARQL 1.1, hyperedges, and 8 verified graph transformer modules — built in |
-| 🤖 | **AI Runtime** | llama.cpp, vLLM, Ollama | Run GGUF models locally on your hardware — no cloud APIs, no per-query costs |
+| 🤖 | **AI Runtime** | llama.cpp, vLLM, Ollama | ruvllm — GGUF inference with Metal, CUDA, ANE, WebGPU; MicroLoRA per-request tuning in <1 ms; speculative decoding; continuous batching; runs in browser via WASM |
 | 🧠 | **ML Framework** | PyTorch, TensorFlow | 46 attention mechanisms, 8 verified graph transformer modules (physics, bio, manifold, temporal, economic), spiking neural networks, sparse inference, mincut-gated attention, hyperbolic embeddings, sublinear solvers, domain expansion, verified training, quantum coherence, coherence measurement |
 | 🌐 | **Coordination** | etcd, ZooKeeper, Consul | Raft consensus, multi-master replication, CRDT delta sync, auto-sharding |
 | 📦 | **Packaging** | Docker, Kubernetes | One `.rvf` file = your entire service. Runs on servers, browsers, phones, and IoT |
