@@ -2,6 +2,12 @@
 //!
 //! Used by the obstacle detector, scene graph builder, and perception pipeline
 //! to avoid duplicating the same algorithm.
+//!
+//! ## Optimizations
+//!
+//! - Union-by-rank prevents tree degeneration, keeping `find` near O(α(n)).
+//! - Path halving in `find` for efficient path compression.
+//! - `#[inline]` on hot helpers to ensure inlining in tight loops.
 
 use crate::bridge::{Point3D, PointCloud};
 use std::collections::HashMap;
@@ -23,7 +29,7 @@ pub fn cluster_point_cloud(cloud: &PointCloud, cell_size: f64) -> Vec<Vec<Point3
         cell_map.entry(key).or_default().push(idx);
     }
 
-    // 2. Build union-find over cells.
+    // 2. Build union-find over cells (with rank for balanced merges).
     let cells: Vec<(i64, i64, i64)> = cell_map.keys().copied().collect();
     let cell_count = cells.len();
     let cell_idx: HashMap<(i64, i64, i64), usize> = cells
@@ -33,6 +39,7 @@ pub fn cluster_point_cloud(cloud: &PointCloud, cell_size: f64) -> Vec<Vec<Point3
         .collect();
 
     let mut parent: Vec<usize> = (0..cell_count).collect();
+    let mut rank: Vec<u8> = vec![0; cell_count];
 
     for &(cx, cy, cz) in &cells {
         let a = cell_idx[&(cx, cy, cz)];
@@ -41,7 +48,7 @@ pub fn cluster_point_cloud(cloud: &PointCloud, cell_size: f64) -> Vec<Vec<Point3
                 for dz in -1..=1_i64 {
                     let neighbor = (cx + dx, cy + dy, cz + dz);
                     if let Some(&b) = cell_idx.get(&neighbor) {
-                        uf_union(&mut parent, a, b);
+                        uf_union(&mut parent, &mut rank, a, b);
                     }
                 }
             }
@@ -63,6 +70,7 @@ pub fn cluster_point_cloud(cloud: &PointCloud, cell_size: f64) -> Vec<Vec<Point3
 }
 
 /// Compute the grid cell key for a point.
+#[inline]
 fn cell_key(p: &Point3D, cell_size: f64) -> (i64, i64, i64) {
     (
         (p.x as f64 / cell_size).floor() as i64,
@@ -71,7 +79,8 @@ fn cell_key(p: &Point3D, cell_size: f64) -> (i64, i64, i64) {
     )
 }
 
-/// Path-compressing find.
+/// Path-compressing find (path halving).
+#[inline]
 fn uf_find(parent: &mut [usize], mut i: usize) -> usize {
     while parent[i] != i {
         parent[i] = parent[parent[i]];
@@ -80,12 +89,20 @@ fn uf_find(parent: &mut [usize], mut i: usize) -> usize {
     i
 }
 
-/// Union by attaching one root to another.
-fn uf_union(parent: &mut [usize], a: usize, b: usize) {
+/// Union by rank: attaches the shorter tree under the taller root.
+#[inline]
+fn uf_union(parent: &mut [usize], rank: &mut [u8], a: usize, b: usize) {
     let ra = uf_find(parent, a);
     let rb = uf_find(parent, b);
     if ra != rb {
-        parent[ra] = rb;
+        match rank[ra].cmp(&rank[rb]) {
+            std::cmp::Ordering::Less => parent[ra] = rb,
+            std::cmp::Ordering::Greater => parent[rb] = ra,
+            std::cmp::Ordering::Equal => {
+                parent[rb] = ra;
+                rank[ra] += 1;
+            }
+        }
     }
 }
 

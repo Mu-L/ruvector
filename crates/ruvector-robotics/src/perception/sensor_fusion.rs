@@ -43,8 +43,15 @@ pub fn fuse_clouds(clouds: &[PointCloud], config: &FusionConfig) -> PointCloud {
     }
 
     let reference_ts = clouds[0].timestamp_us;
-    let mut merged_points: Vec<Point3D> = Vec::new();
-    let mut merged_intensities: Vec<f32> = Vec::new();
+
+    // Pre-allocate merged vectors based on total point count of eligible clouds.
+    let total_cap: usize = clouds
+        .iter()
+        .filter(|c| (c.timestamp_us - reference_ts).abs() <= config.max_time_delta_us)
+        .map(|c| c.points.len())
+        .sum();
+    let mut merged_points: Vec<Point3D> = Vec::with_capacity(total_cap);
+    let mut merged_intensities: Vec<f32> = Vec::with_capacity(total_cap);
 
     for cloud in clouds {
         let dt = (cloud.timestamp_us - reference_ts).abs();

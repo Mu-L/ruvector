@@ -3,6 +3,14 @@
 //! Supports Euclidean, Manhattan, and Cosine distance metrics. Designed as a
 //! lightweight, dependency-free baseline that can be swapped for an HNSW
 //! implementation when the dataset outgrows brute-force search.
+//!
+//! ## Optimizations
+//!
+//! - Points stored in a flat `Vec<f32>` buffer (stride = dimensions) for cache
+//!   locality and zero per-point heap allocation.
+//! - Euclidean kNN uses **squared** distances for comparison, deferring the
+//!   `sqrt` to only the final `k` results.
+//! - Cosine distance computed in a single fused loop (dot, norm_a, norm_b).
 
 use crate::bridge::config::DistanceMetric;
 use crate::bridge::PointCloud;
@@ -69,17 +77,24 @@ impl fmt::Display for IndexError {
 
 impl std::error::Error for IndexError {}
 
-fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
+/// Squared Euclidean distance (avoids sqrt for comparison-only use).
+#[inline]
+fn euclidean_distance_sq(a: &[f32], b: &[f32]) -> f32 {
     a.iter()
         .zip(b.iter())
         .map(|(x, y)| {
             let d = x - y;
             d * d
         })
-        .sum::<f32>()
-        .sqrt()
+        .sum()
 }
 
+#[inline]
+fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
+    euclidean_distance_sq(a, b).sqrt()
+}
+
+#[inline]
 fn manhattan_distance(a: &[f32], b: &[f32]) -> f32 {
     a.iter()
         .zip(b.iter())
@@ -87,23 +102,32 @@ fn manhattan_distance(a: &[f32], b: &[f32]) -> f32 {
         .sum()
 }
 
+/// Cosine distance in a single fused loop (dot + both norms together).
+#[inline]
 fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
-    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-    let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-    let denom = norm_a * norm_b;
+    let (mut dot, mut norm_a, mut norm_b) = (0.0_f32, 0.0_f32, 0.0_f32);
+    for (x, y) in a.iter().zip(b.iter()) {
+        dot += x * y;
+        norm_a += x * x;
+        norm_b += y * y;
+    }
+    let denom = norm_a.sqrt() * norm_b.sqrt();
     if denom < f32::EPSILON {
         return 1.0; // zero-vectors are maximally dissimilar
     }
     (1.0 - (dot / denom).clamp(-1.0, 1.0)).max(0.0)
 }
 
-/// A flat spatial index that stores points as dense vectors.
+/// A flat spatial index that stores points in a contiguous `f32` buffer.
+///
+/// Points are stored in a flat `Vec<f32>` with stride equal to `dimensions`,
+/// eliminating per-point heap allocations and improving cache locality.
 #[derive(Debug, Clone)]
 pub struct SpatialIndex {
     dimensions: usize,
     metric: DistanceMetric,
-    points: Vec<Vec<f32>>,
+    /// Flat buffer: point `i` occupies `data[i*dimensions .. (i+1)*dimensions]`.
+    data: Vec<f32>,
 }
 
 impl SpatialIndex {
@@ -112,7 +136,7 @@ impl SpatialIndex {
         Self {
             dimensions,
             metric: DistanceMetric::Euclidean,
-            points: Vec::new(),
+            data: Vec::new(),
         }
     }
 
@@ -121,14 +145,15 @@ impl SpatialIndex {
         Self {
             dimensions,
             metric,
-            points: Vec::new(),
+            data: Vec::new(),
         }
     }
 
     /// Insert all points from a [`PointCloud`] into the index.
     pub fn insert_point_cloud(&mut self, cloud: &PointCloud) {
+        self.data.reserve(cloud.points.len() * 3);
         for p in &cloud.points {
-            self.points.push(vec![p.x, p.y, p.z]);
+            self.data.extend_from_slice(&[p.x, p.y, p.z]);
         }
     }
 
@@ -137,7 +162,7 @@ impl SpatialIndex {
     pub fn insert_vectors(&mut self, vectors: &[Vec<f32>]) {
         for v in vectors {
             if v.len() == self.dimensions {
-                self.points.push(v.clone());
+                self.data.extend_from_slice(v);
             }
         }
     }
@@ -146,12 +171,16 @@ impl SpatialIndex {
     ///
     /// Returns `(index, distance)` pairs sorted by ascending distance.
     /// Uses a max-heap of size `k` for O(n log k) instead of O(n log n).
+    ///
+    /// For the Euclidean metric, squared distances are used internally and
+    /// only the final `k` results are square-rooted.
     pub fn search_nearest(
         &self,
         query: &[f32],
         k: usize,
     ) -> Result<Vec<(usize, f32)>, IndexError> {
-        if self.points.is_empty() {
+        let n = self.len();
+        if n == 0 {
             return Err(IndexError::EmptyIndex);
         }
         if query.len() != self.dimensions {
@@ -161,26 +190,39 @@ impl SpatialIndex {
             });
         }
 
-        // Max-heap: keeps the k closest points seen so far. The heap root is
-        // the *farthest* of the k candidates, so we can cheaply reject points
-        // that are further away.
+        let use_sq = matches!(self.metric, DistanceMetric::Euclidean);
         let mut heap: BinaryHeap<MaxDistEntry> = BinaryHeap::with_capacity(k + 1);
+        let dim = self.dimensions;
 
-        for (i, p) in self.points.iter().enumerate() {
-            let d = self.compute_distance(query, p);
+        for i in 0..n {
+            let p = &self.data[i * dim..(i + 1) * dim];
+            let d = if use_sq {
+                euclidean_distance_sq(query, p)
+            } else {
+                self.compute_distance(query, p)
+            };
             if heap.len() < k {
-                heap.push(MaxDistEntry { index: i, distance: d });
+                heap.push(MaxDistEntry {
+                    index: i,
+                    distance: d,
+                });
             } else if let Some(top) = heap.peek() {
                 if d < top.distance {
                     heap.pop();
-                    heap.push(MaxDistEntry { index: i, distance: d });
+                    heap.push(MaxDistEntry {
+                        index: i,
+                        distance: d,
+                    });
                 }
             }
         }
 
         let mut result: Vec<(usize, f32)> = heap
             .into_iter()
-            .map(|e| (e.index, e.distance))
+            .map(|e| {
+                let dist = if use_sq { e.distance.sqrt() } else { e.distance };
+                (e.index, dist)
+            })
             .collect();
         result.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
         Ok(result)
@@ -189,12 +231,15 @@ impl SpatialIndex {
     /// Find all points within `radius` of `center`.
     ///
     /// Returns `(index, distance)` pairs in arbitrary order.
+    /// For the Euclidean metric, squared distances are compared against
+    /// `radius²` internally.
     pub fn search_radius(
         &self,
         center: &[f32],
         radius: f32,
     ) -> Result<Vec<(usize, f32)>, IndexError> {
-        if self.points.is_empty() {
+        let n = self.len();
+        if n == 0 {
             return Ok(Vec::new());
         }
         if center.len() != self.dimensions {
@@ -203,35 +248,44 @@ impl SpatialIndex {
                 got: center.len(),
             });
         }
-        let results: Vec<(usize, f32)> = self
-            .points
-            .iter()
-            .enumerate()
-            .filter_map(|(i, p)| {
-                let d = self.compute_distance(center, p);
-                if d <= radius {
-                    Some((i, d))
-                } else {
-                    None
-                }
-            })
-            .collect();
+
+        let use_sq = matches!(self.metric, DistanceMetric::Euclidean);
+        let threshold = if use_sq { radius * radius } else { radius };
+        let dim = self.dimensions;
+
+        let mut results = Vec::new();
+        for i in 0..n {
+            let p = &self.data[i * dim..(i + 1) * dim];
+            let d = if use_sq {
+                euclidean_distance_sq(center, p)
+            } else {
+                self.compute_distance(center, p)
+            };
+            if d <= threshold {
+                let dist = if use_sq { d.sqrt() } else { d };
+                results.push((i, dist));
+            }
+        }
         Ok(results)
     }
 
     /// Number of points stored in the index.
     pub fn len(&self) -> usize {
-        self.points.len()
+        if self.dimensions == 0 {
+            0
+        } else {
+            self.data.len() / self.dimensions
+        }
     }
 
     /// Returns `true` if the index contains no points.
     pub fn is_empty(&self) -> bool {
-        self.points.is_empty()
+        self.data.is_empty()
     }
 
     /// Remove all points from the index.
     pub fn clear(&mut self) {
-        self.points.clear();
+        self.data.clear();
     }
 
     /// The dimensionality of this index.
@@ -244,6 +298,7 @@ impl SpatialIndex {
         self.metric
     }
 
+    #[inline]
     fn compute_distance(&self, a: &[f32], b: &[f32]) -> f32 {
         match self.metric {
             DistanceMetric::Euclidean => euclidean_distance(a, b),

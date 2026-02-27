@@ -11,7 +11,7 @@ use crate::bridge::OccupancyGrid;
 
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 
 /// A 2-D grid cell coordinate.
 pub type Cell = (usize, usize);
@@ -81,9 +81,11 @@ pub fn astar(
         return Ok(GridPath { cells: vec![start], cost: 0.0 });
     }
 
-    let mut g_score: HashMap<Cell, f64> = HashMap::new();
-    let mut came_from: HashMap<Cell, Cell> = HashMap::new();
+    let mut g_score: HashMap<Cell, f64> = HashMap::with_capacity(128);
+    let mut came_from: HashMap<Cell, Cell> = HashMap::with_capacity(128);
     let mut open = BinaryHeap::new();
+    let mut closed: HashSet<Cell> = HashSet::with_capacity(128);
+    let mut neighbor_buf: Vec<(usize, usize, f64)> = Vec::with_capacity(8);
 
     g_score.insert(start, 0.0);
     open.push(AStarEntry { cell: start, f: heuristic(start, goal) });
@@ -93,11 +95,20 @@ pub fn astar(
             return Ok(reconstruct_path(&came_from, goal, &g_score));
         }
 
+        // Skip already-expanded nodes (avoids re-expansion from stale heap entries).
+        if !closed.insert(cell) {
+            continue;
+        }
+
         let current_g = g_score[&cell];
 
-        for (nx, ny, step_cost) in neighbors(grid, cell) {
-            let tentative_g = current_g + step_cost;
+        neighbors_into(grid, cell, &mut neighbor_buf);
+        for &(nx, ny, step_cost) in &neighbor_buf {
             let neighbor = (nx, ny);
+            if closed.contains(&neighbor) {
+                continue;
+            }
+            let tentative_g = current_g + step_cost;
             if tentative_g < *g_score.get(&neighbor).unwrap_or(&f64::INFINITY) {
                 g_score.insert(neighbor, tentative_g);
                 came_from.insert(neighbor, cell);
@@ -112,10 +123,12 @@ pub fn astar(
     Err(PlanningError::NoPath)
 }
 
+#[inline]
 fn cell_free(grid: &OccupancyGrid, (x, y): Cell) -> bool {
     grid.get(x, y).map_or(false, |v| v < OCCUPIED_THRESHOLD)
 }
 
+#[inline]
 fn heuristic(a: Cell, b: Cell) -> f64 {
     let dx = (a.0 as f64 - b.0 as f64).abs();
     let dy = (a.1 as f64 - b.1 as f64).abs();
@@ -124,8 +137,11 @@ fn heuristic(a: Cell, b: Cell) -> f64 {
     min * std::f64::consts::SQRT_2 + (max - min)
 }
 
-fn neighbors(grid: &OccupancyGrid, (cx, cy): Cell) -> Vec<(usize, usize, f64)> {
-    let mut out = Vec::with_capacity(8);
+/// Write neighbours of `cell` into `out`, reusing the buffer to avoid
+/// per-expansion heap allocation.
+#[inline]
+fn neighbors_into(grid: &OccupancyGrid, (cx, cy): Cell, out: &mut Vec<(usize, usize, f64)>) {
+    out.clear();
     for dx in [-1_i64, 0, 1] {
         for dy in [-1_i64, 0, 1] {
             if dx == 0 && dy == 0 {
@@ -147,7 +163,6 @@ fn neighbors(grid: &OccupancyGrid, (cx, cy): Cell) -> Vec<(usize, usize, f64)> {
             }
         }
     }
-    out
 }
 
 fn reconstruct_path(

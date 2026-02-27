@@ -87,14 +87,17 @@ impl SceneGraphBuilder {
     pub fn build(&self, mut objects: Vec<SceneObject>, timestamp: i64) -> SceneGraph {
         objects.truncate(self.max_objects);
 
+        let threshold_sq = self.edge_distance_threshold * self.edge_distance_threshold;
         let mut edges = Vec::new();
         for i in 0..objects.len() {
             for j in (i + 1)..objects.len() {
                 let dx = objects[i].center[0] - objects[j].center[0];
                 let dy = objects[i].center[1] - objects[j].center[1];
                 let dz = objects[i].center[2] - objects[j].center[2];
-                let dist = (dx * dx + dy * dy + dz * dz).sqrt();
-                if dist <= self.edge_distance_threshold {
+                let dist_sq = dx * dx + dy * dy + dz * dz;
+                if dist_sq <= threshold_sq {
+                    // Only compute sqrt for edges that pass the filter.
+                    let dist = dist_sq.sqrt();
                     let relation = if dist < 1.0 {
                         "adjacent".to_string()
                     } else if dist < 3.0 {
@@ -316,10 +319,15 @@ impl PerceptionPipeline {
 
         let mut edges: Vec<SceneEdge> = Vec::new();
 
+        let max_dist_sq = max_edge_distance * max_edge_distance;
         for i in 0..objects.len() {
             for j in (i + 1)..objects.len() {
-                let d = Self::dist_3d(&objects[i].center, &objects[j].center);
-                if d <= max_edge_distance {
+                let dx = objects[i].center[0] - objects[j].center[0];
+                let dy = objects[i].center[1] - objects[j].center[1];
+                let dz = objects[i].center[2] - objects[j].center[2];
+                let d_sq = dx * dx + dy * dy + dz * dz;
+                if d_sq <= max_dist_sq {
+                    let d = d_sq.sqrt();
                     let relation = if d < max_edge_distance * 0.33 {
                         "adjacent"
                     } else if d < max_edge_distance * 0.66 {
@@ -424,6 +432,8 @@ impl PerceptionPipeline {
         }
 
         let n = cloud.points.len() as f64;
+
+        // Pass 1: compute centroid.
         let (mut cx, mut cy, mut cz) = (0.0_f64, 0.0_f64, 0.0_f64);
         for p in &cloud.points {
             cx += p.x as f64;
@@ -434,19 +444,22 @@ impl PerceptionPipeline {
         cy /= n;
         cz /= n;
 
-        let distances: Vec<f64> = cloud
-            .points
-            .iter()
-            .map(|p| {
-                let dx = p.x as f64 - cx;
-                let dy = p.y as f64 - cy;
-                let dz = p.z as f64 - cz;
-                (dx * dx + dy * dy + dz * dz).sqrt()
-            })
-            .collect();
+        // Pass 2: compute distances and running mean + variance (Welford's).
+        let mut distances: Vec<f64> = Vec::with_capacity(cloud.points.len());
+        let mut w_mean = 0.0_f64;
+        let mut w_m2 = 0.0_f64;
+        for (i, p) in cloud.points.iter().enumerate() {
+            let dx = p.x as f64 - cx;
+            let dy = p.y as f64 - cy;
+            let dz = p.z as f64 - cz;
+            let d = (dx * dx + dy * dy + dz * dz).sqrt();
+            distances.push(d);
+            let delta = d - w_mean;
+            w_mean += delta / (i + 1) as f64;
+            w_m2 += delta * (d - w_mean);
+        }
 
-        let mean = distances.iter().sum::<f64>() / n;
-        let variance = distances.iter().map(|d| (d - mean).powi(2)).sum::<f64>() / n;
+        let variance = w_m2 / n;
         let std_dev = variance.sqrt();
 
         if std_dev < f64::EPSILON {
@@ -455,7 +468,7 @@ impl PerceptionPipeline {
 
         let mut anomalies = Vec::new();
         for (i, p) in cloud.points.iter().enumerate() {
-            let z = (distances[i] - mean) / std_dev;
+            let z = (distances[i] - w_mean) / std_dev;
             if z.abs() > self.anomaly_threshold {
                 anomalies.push(Anomaly {
                     position: [p.x as f64, p.y as f64, p.z as f64],
@@ -485,19 +498,21 @@ impl PerceptionPipeline {
         }
         let center = [sx / n, sy / n, sz / n];
 
-        let radius = points
+        // Compare squared distances and take a single sqrt at the end.
+        let radius_sq = points
             .iter()
             .map(|p| {
                 let dx = p.x as f64 - center[0];
                 let dy = p.y as f64 - center[1];
                 let dz = p.z as f64 - center[2];
-                (dx * dx + dy * dy + dz * dz).sqrt()
+                dx * dx + dy * dy + dz * dz
             })
             .fold(0.0_f64, f64::max);
 
-        (center, radius)
+        (center, radius_sq.sqrt())
     }
 
+    #[inline]
     fn dist_3d(a: &[f64; 3], b: &[f64; 3]) -> f64 {
         ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
     }
